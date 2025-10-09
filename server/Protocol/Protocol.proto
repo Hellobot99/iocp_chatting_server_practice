@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+option csharp_namespace = "GameServer.Protocol";
+option go_package = ".;protocol";
+
+enum PacketId {
+  PACKET_NONE = 0;
+  C_LOGIN = 1;
+  S_LOGIN = 2;
+  C_MOVE = 3;
+  S_MOVE = 4;
+}
+
+message C_Login {
+  string unique_id = 1; // 클라이언트 고유 식별자 (예: 디바이스 ID, 이메일)
+}
+
+message S_Login {
+  bool login_ok = 1;
+  uint64 player_id = 2; // 서버에서 할당한 플레이어 ID
+  string nickname = 3;
+}
