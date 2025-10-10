@@ -7,9 +7,19 @@
 #include <thread>
 #include "ClientSession.h"
 #include "Utility.h"
+#include "IOCPWorker.h"
+#include "RoomManager.h"
+#include "Persistence.h"
 
-class GameLogic; // 전방 선언
-class Persistence; // 전방 선언
+class GameLogic;
+class Persistence;
+
+struct PER_IO_DATA {
+    OVERLAPPED overlapped;
+    WSABUF wsaBuf;
+    char buffer[1024];
+    int operation; // 0: recv, 1: send
+};
 
 class Server
 {
@@ -19,29 +29,27 @@ public:
 
     bool Start(USHORT port);
     void Stop();
+    static LockFreeQueue<std::unique_ptr<ICommand>>& GetGLTInputQueue();
+
 
 private:
     RoomManager roomManager_;
+    static LockFreeQueue<std::unique_ptr<ICommand>> s_gltInputQueue;
 
     // IOCP 핸들
     HANDLE hIOCP_;
     SOCKET listenSock_;
-
-    //==================================================================
-    // 3계층 분리된 스레드 풀 및 핵심 로직 컴포넌트
-    //==================================================================
+    std::atomic<bool> accepting_ = true;
 
     // 1. I/O 워커 스레드 풀 (IOCP Worker Threads)
     std::vector<std::thread> iocpWorkerThreads_;
 
     // 2. 게임 로직 스레드 (GLT)
     std::unique_ptr<GameLogic> gameLogic_;
-    std::thread gameLogicThread_;
+    std::thread gameLogicThread_, acceptThread_;
 
     // 3. 지속성 스레드 풀 (DBTP)
     std::unique_ptr<Persistence> persistence_;
-
-    //==================================================================
 
     // 클라이언트 세션 관리 (ID 매핑)
     std::mutex sessionMutex_;
@@ -50,7 +58,4 @@ private:
 
     void AcceptLoop();
     void HandleNewClient(SOCKET clientSock);
-
-    // IOCP 워커 스레드의 진입 함수 (별도 파일에 정의된 함수 포인터)
-    void RunIOCPWorker(HANDLE hIOCP);
 };

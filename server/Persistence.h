@@ -7,15 +7,15 @@
 
 // MySQL 및 Redis 라이브러리 (기존 코드 기반)
 #include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/prepared_statement.h>
+#include <cppconn/exception.h>
 #include <cppconn/connection.h>
 #include <hiredis/hiredis.h>
 #include "Utility.h"
 #include "PersistenceRequest.h"
+#include "DBWorker.h"
 
-//======================================================================
-// 지속성 스레드 풀 (DBTP) 관리자
-// [23, 24, 25]
-//======================================================================
 class Persistence
 {
 public:
@@ -54,6 +54,9 @@ private:
 
     // MySQL 드라이버 및 연결 관리
     sql::mysql::MySQL_Driver* driver_;
-
+    std::vector<sql::Connection*> mysqlConnectionPool_;
+    std::vector<redisContext*> redisContextPool_;
+    std::mutex poolMutex_;
+    sql::Connection* GetMySqlConnection()
     // DBTP 워커들은 내부적으로 Connection Pool을 사용하거나 Thread-local Connection을 유지해야 합니다.
 };

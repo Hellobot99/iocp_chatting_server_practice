@@ -4,27 +4,23 @@
 #include "Persistence.h"
 
 extern DWORD WINAPI IOCPWorkerThread(LPVOID arg);
+LockFreeQueue<std::unique_ptr<ICommand>> Server::s_gltInputQueue;
 
 Server::Server(int iocpThreadCount, int dbThreadCount)
     : hIOCP_(NULL),
     listenSock_(INVALID_SOCKET),
     nextSessionId_(1)
 {
-    // 큐를 먼저 생성하고, GameLogic과 Persistence에 공유합니다.
-    static LockFreeQueue<std::unique_ptr<ICommand>> gltInputQueue;
-
     persistence_ = std::make_unique<Persistence>(dbThreadCount);
-    // (여기서 DB/Redis Initialize를 호출해야 합니다.)
+    persistence_->Initialize("tcp://127.0.0.1:3306", "root", "1234", "127.0.0.1", 6379);
 
-    // GameLogic 생성 (GLT는 입력 큐와 지속성 시스템에 대한 참조를 가집니다.)
-    gameLogic_ = std::make_unique<GameLogic>(gltInputQueue, roomManager_, *persistence_);
+    gameLogic_ = std::make_unique<GameLogic>(Server::GetGLTInputQueue(), roomManager_, *persistence_);
 }
 
 Server::~Server()
 {
     Stop();
 }
-
 
 // Start: 서버 실행 및 스레드 생성
 bool Server::Start(USHORT port)
@@ -57,8 +53,8 @@ bool Server::Start(USHORT port)
     // GameLogic::Run()이 GLT의 진입 함수입니다.
     gameLogicThread_ = std::thread(&GameLogic::Run, gameLogic_.get());
 
-    // 4. 클라이언트 수락 루프 시작 (메인 스레드 또는 별도 스레드에서)
-    // AcceptLoop(); // 만약 메인 스레드에서 돌린다면
+    // 4. 클라이언트 수락 루프 시작
+    acceptThread_ = std::thread(&Server::AcceptLoop, this);
 
     return true; // 성공 시
 }
@@ -67,7 +63,12 @@ bool Server::Start(USHORT port)
 void Server::Stop()
 {
     // 1. Accept 루프 정지
-    //...
+    accepting_ = false;
+
+    if (acceptThread_.joinable()) 
+    {
+        acceptThread_.join();
+    }   
 
     // 2. GLT에 정지 신호 전달 및 조인
     if (gameLogic_)
@@ -80,7 +81,16 @@ void Server::Stop()
     }
 
     // 3. IOCP Worker Thread 정지 신호 전달 (PostQueuedCompletionStatus 등을 이용) 및 조인
-    //...
+    
+    if (hIOCP_ != NULL)
+    {
+        for (size_t i = 0; i < iocpWorkerThreads_.size(); ++i)
+        {
+            // pIoData=0, CompletionKey=0 (종료 신호로 약속된 값)을 넣습니다.
+            PostQueuedCompletionStatus(hIOCP_, 0, 0, NULL);
+        }
+    }
+
     for (auto& t : iocpWorkerThreads_)
     {
         if (t.joinable())
@@ -96,32 +106,43 @@ void Server::Stop()
     }
 
     // 5. 네트워킹 자원 정리 (closesocket, WSACleanup)
-    //...
+    if (hIOCP_ != NULL) CloseHandle(hIOCP_);
+    WSACleanup();
+    //redisFree(c);
 }
 
-
-// 멤버 함수 구현 (반드시 Server:: 스코프 지정)
+LockFreeQueue<std::unique_ptr<ICommand>>& Server::GetGLTInputQueue()
+{
+    return s_gltInputQueue;
+}
 
 // 클라이언트 연결 수락 루프 구현
 void Server::AcceptLoop()
 {
-    // listenSock_에서 accept()를 반복적으로 호출
-    // 새 클라이언트 연결 시 HandleNewClient 호출
-    //...
+    while (accepting_.load()) {
+        SOCKET clientSock = accept(listenSock_, NULL, NULL);
+        std::cout << "New Client connected!\n";
+
+        HandleNewClient(clientSock);
+    }
 }
 
 // 새 클라이언트 처리 로직 구현
 void Server::HandleNewClient(SOCKET clientSock)
 {
-    // 1. 새 ClientSession 객체 생성
-    // 2. IOCP에 해당 소켓 등록: CreateIoCompletionPort((HANDLE)clientSock, hIOCP_, (ULONG_PTR)newSession, 0);
-    // 3. 초기 WSARecv() 요청 걸기
-    //...
-}
+    // IOCP에 클라이언트 소켓 등록
+    uint32_t newId = nextSessionId_.fetch_add(1);
+    auto newSession = std::make_shared<ClientSession>(clientSock, newId);
 
-// IOCP 워커 스레드의 진입 함수 (보통 Free Function으로 구현됨)
-/*
-void RunIOCPWorker(HANDLE hIOCP) {
-    //... 이 부분은 Server.cpp가 아닌 IOCPWorker.cpp에 위치해야 합니다.
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+    sessions_.push_back(newSession);
+
+    CreateIoCompletionPort(
+        (HANDLE)clientSock,
+        hIOCP_,
+        (ULONG_PTR)newSession.get(),
+        0
+    );
+
+    newSession->PostRecv(hIOCP_);
 }
-*/
