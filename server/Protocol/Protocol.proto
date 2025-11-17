@@ -1,5 +1,7 @@
 syntax = "proto3";
 
+package Protocol;
+
 option csharp_namespace = "GameServer.Protocol";
 option go_package = ".;protocol";
 
@@ -9,14 +11,49 @@ enum PacketId {
   S_LOGIN = 2;
   C_MOVE = 3;
   S_MOVE = 4;
+  C_CHAT = 5;
+  S_CHAT = 6;
+  S_STATE_SNAPSHOT = 7;
+}
+
+message Vector2 {
+  float x = 1;
+  float y = 2;
 }
 
 message C_Login {
-  string unique_id = 1; // 클라이언트 고유 식별자 (예: 디바이스 ID, 이메일)
+  string unique_id = 1; // 클라이언트 고유 식별자
 }
 
 message S_Login {
   bool login_ok = 1;
   uint64 player_id = 2; // 서버에서 할당한 플레이어 ID
   string nickname = 3;
+}
+
+// C_MOVE (클라이언트 -> 서버)
+message C_Move {
+  Vector2 desired_velocity = 1; // 변수명은 snake_case 권장 (C++에선 desiredVelocity()로 바뀜)
+}
+
+// C_CHAT (클라이언트 -> 서버)
+message C_Chat { // 이름 통일성을 위해 C2S_Chat -> C_Chat 추천
+  string username = 1;
+  string message = 2;
+}
+
+// S_STATE_SNAPSHOT 내부에서 쓸 플레이어 정보
+message PlayerSnapshot {
+  uint32 session_id = 1;
+  Vector2 authoritative_position = 2; // 서버가 결정한 최종 위치
+  // 델타 압축 플래그 등은 나중에 여기에 추가 (uint32 flags = 3;)
+}
+
+// S_STATE_SNAPSHOT (서버 -> 클라이언트)
+message S_StateSnapshot {
+  uint32 server_tick = 1; // 현재 틱 번호
+
+  // 'repeated'는 가변 길이 배열(std::vector, List) 역할을 합니다.
+  // 갯수(count)를 따로 보낼 필요 없이 이거 하나면 됩니다.
+  repeated PlayerSnapshot players = 2; 
 }

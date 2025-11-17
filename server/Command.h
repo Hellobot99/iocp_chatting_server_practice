@@ -1,9 +1,13 @@
+// ClientSession.h 맨 윗부분 수정
 #pragma once
 
-#include <memory>
+#include <winsock2.h>
+#include <mutex>
 #include <string>
+#include <vector> // vector도 없으면 추가
+#include <memory> // <--- 이거 필수! (unique_ptr용)
 #include "Utility.h"
-#include "RoomManager.h"
+#include "Command.h"
 
 class GameRoom; // 전방 선언
 class PlayerState; // 전방 선언
@@ -26,27 +30,32 @@ public:
 };
 
 // 2. 구체적인 명령 클래스: Move
-class MoveCommand : public ICommand
-{
+class MoveCommand : public ICommand {
 public:
-    MoveCommand(uint32_t sessionId, Vector2 desiredVelocity)
-        : sessionId_(sessionId), desiredVelocity_(desiredVelocity) {
+    // 생성자에서 Protobuf 메시지를 받아 데이터를 꺼내옵니다.
+    MoveCommand(uint32_t sessionId, const Protocol::C_Move& pkt)
+        : sessionId_(sessionId)
+    {
+        vx_ = pkt.desired_velocity().x();
+        vy_ = pkt.desired_velocity().y();
     }
 
     void Execute(RoomManager& roomManager, Persistence& persistence) override;
 
 private:
     uint32_t sessionId_;
-    Vector2 desiredVelocity_;
-    // 여기에 클라이언트가 보낸 순서 번호(Sequence Number)도 저장해야 함
+    float vx_;
+    float vy_;
 };
 
 // 3. 구체적인 명령 클래스: Chat
-class ChatCommand : public ICommand
-{
+class ChatCommand : public ICommand {
 public:
-    ChatCommand(uint32_t sessionId, const std::string& msg)
-        : sessionId_(sessionId), message_(msg) {
+    ChatCommand(uint32_t sessionId, const Protocol::C_Chat& pkt)
+        : sessionId_(sessionId)
+    {
+        // Protobuf string -> std::string 복사
+        message_ = pkt.message();
     }
 
     void Execute(RoomManager& roomManager, Persistence& persistence) override;

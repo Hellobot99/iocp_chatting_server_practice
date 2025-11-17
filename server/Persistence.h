@@ -15,6 +15,8 @@
 #include "Utility.h"
 #include "PersistenceRequest.h"
 #include "DBWorker.h"
+#include "Protocol.pb.h"
+#include "PersistenceRequest.h"
 
 class Persistence
 {
@@ -51,12 +53,13 @@ private:
 
     // DB 워커 스레드가 실행할 실제 작업 루프
     void WorkerLoop();
+    void ProcessSaveChat(sql::Connection* con, redisContext* redis, const PersistenceRequest& req);
 
     // MySQL 드라이버 및 연결 관리
     sql::mysql::MySQL_Driver* driver_;
     std::vector<sql::Connection*> mysqlConnectionPool_;
     std::vector<redisContext*> redisContextPool_;
     std::mutex poolMutex_;
-    sql::Connection* GetMySqlConnection()
+    sql::Connection* GetMySqlConnection();
     // DBTP 워커들은 내부적으로 Connection Pool을 사용하거나 Thread-local Connection을 유지해야 합니다.
 };
