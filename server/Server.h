@@ -40,6 +40,7 @@ private:
     HANDLE hIOCP_;
     SOCKET listenSock_;
     std::atomic<bool> accepting_ = true;
+    int iocpThreadCount_;
 
     // 1. I/O 워커 스레드 풀 (IOCP Worker Threads)
     std::vector<std::thread> iocpWorkerThreads_;

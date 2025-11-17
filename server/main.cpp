@@ -1,3 +1,35 @@
+#include "Server.h"
+#include <iostream>
+
+int main()
+{
+    // 사용할 스레드 개수 설정
+    const int iocpThreadCount = 4;
+    const int dbThreadCount = 2;
+
+    // 메인 서버 객체 생성
+    Server gameServer(iocpThreadCount, dbThreadCount);
+
+    std::cout << "Server starting..." << std::endl;
+
+    // 9190 포트에서 서버 시작
+    if (gameServer.Start(9190)) {
+        std::cout << "Server is running." << std::endl;
+
+        // 메인 스레드가 바로 종료되지 않도록 대기
+        // (실제로는 종료 커맨드를 입력받는 로직 등이 들어갈 수 있습니다)
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    else {
+        std::cerr << "Failed to start server." << std::endl;
+    }
+
+    return 0;
+}
+
+/*
 #include "pch.h"
 #include <winsock2.h>
 #include <mswsock.h>
@@ -201,3 +233,5 @@ void SaveChatMessage(sql::Connection* con, const std::string& username, const st
         std::cerr << "DB 저장 실패: " << e.what() << std::endl;
     }
 }
+
+*/

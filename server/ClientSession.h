@@ -4,9 +4,10 @@
 #include <mutex>
 #include <string>
 #include "Utility.h"
+#include "Command.h"
 
 // IOCP Completion Key로 사용될 클라이언트 세션 객체
-// [4]
+
 class ClientSession
 {
 public:

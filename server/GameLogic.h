@@ -44,6 +44,3 @@ private:
     // 입력 큐에서 모든 명령을 꺼내 처리합니다.
     void ProcessAllInputs();
 };
-
-// GLT 스레드의 진입점 함수
-DWORD WINAPI GameLogicThread(LPVOID arg);

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include "Utility.h"
+#include "RoomManager.h"
 
 class GameRoom; // 전방 선언
 class PlayerState; // 전방 선언
@@ -21,7 +22,7 @@ public:
 
     // 모든 명령은 이 메서드를 통해 GLT에서 실행됩니다.
     // RoomManager와 Persistence 객체를 통해 필요한 상태를 변경합니다.
-    virtual void Execute(GameRoom& room, Persistence& persistence) = 0;
+    virtual void Execute(RoomManager& roomManager, Persistence& persistence) = 0;
 };
 
 // 2. 구체적인 명령 클래스: Move
@@ -32,7 +33,7 @@ public:
         : sessionId_(sessionId), desiredVelocity_(desiredVelocity) {
     }
 
-    void Execute(GameRoom& room, Persistence& persistence) override;
+    void Execute(RoomManager& roomManager, Persistence& persistence) override;
 
 private:
     uint32_t sessionId_;
@@ -48,7 +49,7 @@ public:
         : sessionId_(sessionId), message_(msg) {
     }
 
-    void Execute(GameRoom& room, Persistence& persistence) override;
+    void Execute(RoomManager& roomManager, Persistence& persistence) override;
 
 private:
     uint32_t sessionId_;

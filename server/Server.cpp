@@ -15,6 +15,7 @@ Server::Server(int iocpThreadCount, int dbThreadCount)
     persistence_->Initialize("tcp://127.0.0.1:3306", "root", "1234", "127.0.0.1", 6379);
 
     gameLogic_ = std::make_unique<GameLogic>(Server::GetGLTInputQueue(), roomManager_, *persistence_);
+    iocpThreadCount_ = iocpThreadCount;
 }
 
 Server::~Server()
@@ -42,8 +43,11 @@ bool Server::Start(USHORT port)
 
     hIOCP_ = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 
+    //메모리 미리 예약
+    iocpWorkerThreads_.reserve(iocpThreadCount_);
+
     // 2. IOCP Worker Thread 생성 및 실행
-    for (size_t i = 0; i < iocpWorkerThreads_.capacity(); ++i)
+    for (size_t i = 0; i < iocpThreadCount_; ++i)
     {
         // IOCPWorkerThread 함수 포인터를 사용하여 스레드 생성
         iocpWorkerThreads_.emplace_back(IOCPWorkerThread, hIOCP_);
