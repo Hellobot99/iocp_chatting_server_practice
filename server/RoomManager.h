@@ -26,6 +26,8 @@ public:
 
     std::shared_ptr<GameRoom> GetRoom(int roomId);
 
+    std::shared_ptr<GameRoom> GetRoomOfPlayer(uint32_t sessionId);
+
 private:
     std::map<int, std::shared_ptr<GameRoom>> rooms_;
 

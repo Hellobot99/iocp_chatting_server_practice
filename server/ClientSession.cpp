@@ -1,6 +1,7 @@
+#include "Protocol.pb.h"
 #include "ClientSession.h"
 #include "NetProtocol.h"
-#include "Protocol.pb.h"
+
 #include "Command.h"
 #include <iostream>
 

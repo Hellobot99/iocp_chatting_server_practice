@@ -31,6 +31,8 @@ public:
     int currentRoomId_;
     std::string username_;
 
+    void Send(Protocol::PacketId id, const std::string& serializedData);
+
     // 비동기 Recv를 다시 거는 함수
     void PostRecv(HANDLE hIOCP);
 

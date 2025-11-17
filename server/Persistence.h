@@ -14,7 +14,6 @@
 #include <hiredis/hiredis.h>
 #include "Utility.h"
 #include "PersistenceRequest.h"
-#include "DBWorker.h"
 #include "Protocol.pb.h"
 #include "PersistenceRequest.h"
 

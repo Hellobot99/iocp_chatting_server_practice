@@ -30,10 +30,11 @@ public:
     bool Start(USHORT port);
     void Stop();
     static LockFreeQueue<std::unique_ptr<ICommand>>& GetGLTInputQueue();
-
+    Persistence& GetPersistence() { return *persistence_; }
 
 private:
     RoomManager roomManager_;
+    std::unique_ptr<Persistence> persistence_;
     static LockFreeQueue<std::unique_ptr<ICommand>> s_gltInputQueue;
 
     // IOCP 핸들
@@ -48,9 +49,6 @@ private:
     // 2. 게임 로직 스레드 (GLT)
     std::unique_ptr<GameLogic> gameLogic_;
     std::thread gameLogicThread_, acceptThread_;
-
-    // 3. 지속성 스레드 풀 (DBTP)
-    std::unique_ptr<Persistence> persistence_;
 
     // 클라이언트 세션 관리 (ID 매핑)
     std::mutex sessionMutex_;

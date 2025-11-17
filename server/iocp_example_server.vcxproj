@@ -133,7 +133,6 @@
   <ItemGroup>
     <ClCompile Include="ClientSession.cpp" />
     <ClCompile Include="Command.cpp" />
-    <ClCompile Include="DBWorker.cpp" />
     <ClCompile Include="GameLogic.cpp" />
     <ClCompile Include="GameRoom.cpp" />
     <ClCompile Include="IOCPWorker.cpp" />
@@ -142,13 +141,13 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="Persistence.cpp" />
+    <ClCompile Include="PlayerState.cpp" />
     <ClCompile Include="RoomManager.cpp" />
     <ClCompile Include="Server.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ClientSession.h" />
     <ClInclude Include="Command.h" />
-    <ClInclude Include="DBWorker.h" />
     <ClInclude Include="GameLogic.h" />
     <ClInclude Include="GameRoom.h" />
     <ClInclude Include="IOCPWorker.h" />

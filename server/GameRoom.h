@@ -36,6 +36,7 @@ public:
 private:
     int id_;
     std::string name_;
+    std::mutex roomMutex_;
 
     // 방에 속한 플레이어의 권한 있는 상태
     std::map<uint32_t, std::shared_ptr<PlayerState>> players_;

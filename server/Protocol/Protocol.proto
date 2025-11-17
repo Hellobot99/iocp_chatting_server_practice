@@ -42,6 +42,12 @@ message C_Chat { // 이름 통일성을 위해 C2S_Chat -> C_Chat 추천
   string message = 2;
 }
 
+// S_CHAT (서버 -> 클라이언트)
+message S_Chat {
+  string username = 1; // 보낸 사람 이름 (또는 ID)
+  string message = 2;
+}
+
 // S_STATE_SNAPSHOT 내부에서 쓸 플레이어 정보
 message PlayerSnapshot {
   uint32 session_id = 1;
