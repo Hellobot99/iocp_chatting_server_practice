@@ -30,10 +30,11 @@ public:
     bool Start(USHORT port);
     void Stop();
     static LockFreeQueue<std::unique_ptr<ICommand>>& GetGLTInputQueue();
-
+    Persistence& GetPersistence() { return persistence_; }
 
 private:
     RoomManager roomManager_;
+    Persistence persistence_;
     static LockFreeQueue<std::unique_ptr<ICommand>> s_gltInputQueue;
 
     // IOCP วฺต้

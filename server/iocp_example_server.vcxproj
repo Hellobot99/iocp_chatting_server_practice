@@ -133,7 +133,6 @@
   <ItemGroup>
     <ClCompile Include="ClientSession.cpp" />
     <ClCompile Include="Command.cpp" />
-    <ClCompile Include="DBWorker.cpp" />
     <ClCompile Include="GameLogic.cpp" />
     <ClCompile Include="GameRoom.cpp" />
     <ClCompile Include="IOCPWorker.cpp" />
@@ -148,7 +147,6 @@
   <ItemGroup>
     <ClInclude Include="ClientSession.h" />
     <ClInclude Include="Command.h" />
-    <ClInclude Include="DBWorker.h" />
     <ClInclude Include="GameLogic.h" />
     <ClInclude Include="GameRoom.h" />
     <ClInclude Include="IOCPWorker.h" />
