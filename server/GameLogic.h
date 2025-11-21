@@ -7,6 +7,8 @@
 #include "RoomManager.h"
 #include "Persistence.h"
 #include "Command.h"
+#include "LockFreeQueue.h"
+
 
 //======================================================================
 // 게임 로직 스레드 (GLT) 클래스

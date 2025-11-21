@@ -164,3 +164,43 @@ void Persistence::WorkerLoop()
         }
     }
 }
+
+sql::Connection* Persistence::GetMySqlConnection()
+{
+    // 1. 풀(Pool) 접근 보호를 위해 락을 겁니다.
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    // 2. 풀에 남은 연결이 있는지 확인합니다.
+    if (mysqlConnectionPool_.empty())
+    {
+        return nullptr; // 사용 가능한 연결이 없음 (Initialize 실패 혹은 스레드 수 초과)
+    }
+
+    // 3. 벡터의 맨 뒤에 있는 연결을 가져옵니다.
+    sql::Connection* con = mysqlConnectionPool_.back();
+
+    // 4. 가져온 연결은 풀 목록에서 제거합니다. (해당 스레드에게 소유권을 넘김)
+    mysqlConnectionPool_.pop_back();
+
+    return con;
+}
+
+redisContext* Persistence::GetRedisContext()
+{
+    // 1. 풀 접근 보호
+    std::lock_guard<std::mutex> lock(poolMutex_);
+
+    // 2. 연결 확인
+    if (redisContextPool_.empty())
+    {
+        return nullptr;
+    }
+
+    // 3. 연결 가져오기
+    redisContext* ctx = redisContextPool_.back();
+
+    // 4. 목록에서 제거
+    redisContextPool_.pop_back();
+
+    return ctx;
+}

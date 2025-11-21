@@ -1,5 +1,6 @@
 #pragma once
 
+#include <winsock2.h>
 #include <windows.h>
 
 // IOCP 워커 스레드의 진입점 함수

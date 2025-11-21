@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include "PlayerState.h"
+#include "LockFreeQueue.h"
 
 class ClientSession; // 전방 선언
 

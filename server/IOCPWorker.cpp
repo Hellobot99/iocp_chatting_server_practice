@@ -47,43 +47,11 @@ DWORD WINAPI IOCPWorkerThread(LPVOID arg)
         // 2. I/O 작업 타입 분류 (Recv 완료 또는 Send 완료)
         if (pIoData->operation == 0) // Recv 완료
         {
-            // 현재 Recv 버퍼에 bytesTransferred만큼 데이터가 들어왔습니다.
-
-            // 2-1. 네트워크 스트림 처리 및 패킷 통합
-            // 이 로직은 TCP 스트림이 여러 WSARecv에 걸쳐 쪼개져 오거나, 
-            // 하나의 Recv에 여러 패킷이 합쳐져 오는 경우를 처리합니다. [4]
-            pSession->AppendToInputBuffer(pIoData->buffer, bytesTransferred);
-
-            // 2-2. 패킷 파싱 및 GLT 위임 루프
-            // 버퍼에 완전한 패킷이 남아있는 동안 반복합니다.
-            while (pSession->HasCompletePacket())
-            {
-                // 패킷 데이터를 추출하고 ICommand 객체로 역직렬화합니다. [5, 6]
-                std::unique_ptr<ICommand> command = pSession->DeserializeCommand();
-
-                if (command) {
-                    // 2-3. 커맨드를 GLT 큐에 푸시하고 즉시 반환 (핵심!) [7]
-                    // 이 큐는 GLT가 소비할 Lock-Free Queue여야 합니다.
-                    Server::GetGLTInputQueue().Push(std::move(command));
-                }
-            }
-
-            // 2-4. Recv 재요청 (다음 데이터를 받기 위해 반드시 필요)
-            // Recv 요청이 걸려있지 않으면 해당 소켓은 더 이상 데이터를 수신할 수 없습니다.
-            pSession->PostRecv(hIOCP);
-
-            // pIoData는 Recv 재요청에서 재사용되거나 (PostRecv 내부에서 관리)
-            // 또는 Session 내부에 고정되어 사용되는 것이 일반적입니다.
+            pSession->OnRecv(bytesTransferred);
         }
         else if (pIoData->operation == 1) // Send 완료
         {
-            // 2-5. Send 완료 처리
-            // 이 Send 요청에 사용된 pIoData 메모리를 해제합니다.
-            // WSASend는 논블로킹이므로, 완료 후 메모리 정리가 필요합니다.
-            delete pIoData;
-
-            // (선택 사항) 세션의 출력 큐를 확인하여 다음 Send 작업을 걸 수도 있습니다.
-            // pSession->TryPostNextSend();
+            pSession->OnSendCompleted(bytesTransferred);
         }
     }
     return 0;

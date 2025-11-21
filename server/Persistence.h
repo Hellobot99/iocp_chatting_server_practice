@@ -1,5 +1,5 @@
 #pragma once
-
+#include "Protocol.pb.h"
 #include <vector>
 #include <thread>
 #include <memory>
@@ -14,8 +14,7 @@
 #include <hiredis/hiredis.h>
 #include "Utility.h"
 #include "PersistenceRequest.h"
-#include "Protocol.pb.h"
-#include "PersistenceRequest.h"
+#include "LockFreeQueue.h"
 
 class Persistence
 {
@@ -59,6 +58,4 @@ private:
     std::vector<sql::Connection*> mysqlConnectionPool_;
     std::vector<redisContext*> redisContextPool_;
     std::mutex poolMutex_;
-    sql::Connection* GetMySqlConnection();
-    // DBTP 워커들은 내부적으로 Connection Pool을 사용하거나 Thread-local Connection을 유지해야 합니다.
 };

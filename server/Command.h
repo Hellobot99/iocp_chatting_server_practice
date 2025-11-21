@@ -1,6 +1,6 @@
 // ClientSession.h 맨 윗부분 수정
 #pragma once
-
+#include "Protocol.pb.h"
 #include <winsock2.h>
 #include <mutex>
 #include <string>
@@ -12,6 +12,7 @@
 class GameRoom; // 전방 선언
 class PlayerState; // 전방 선언
 class Persistence; // 전방 선언
+class RoomManager;
 
 //======================================================================
 // 커맨드 패턴 (Command Pattern) 구현
