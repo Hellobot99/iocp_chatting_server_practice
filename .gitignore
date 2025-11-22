@@ -6,3 +6,4 @@ server/iocp_exa.8bb1b05d/
 server/x64/
 client/test_client/obj/
 client/test_client/bin/
+client/test_client/.vs/
