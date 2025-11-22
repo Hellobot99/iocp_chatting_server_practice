@@ -4,3 +4,5 @@ vcpkg/
 server/iocp_cha.8bb1b05d/
 server/iocp_exa.8bb1b05d/
 server/x64/
+client/obj/
+client/bin/
