@@ -1,4 +1,0 @@
-﻿  main.cpp
-C:\unity\iocp_chatting_server_practice\server\main.cpp(8,10): error C1083: 포함 파일을 열 수 없습니다. 'hiredis/hiredis.h': No such file or directory
-  Test.cpp
-C:\unity\iocp_chatting_server_practice\server\Test.cpp(1,10): error C1083: 포함 파일을 열 수 없습니다. 'Protocol.pb.h': No such file or directory
