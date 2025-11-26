@@ -2,7 +2,6 @@
 #include "ClientSession.h" // 세션 헤더 필요
 
 RoomManager::RoomManager() {
-    // 기본 로비(0번 방) 생성
     CreateRoom(0, "Lobby");
 }
 

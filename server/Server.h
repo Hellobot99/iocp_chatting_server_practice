@@ -5,6 +5,8 @@
 #include <vector>
 #include <memory>
 #include <thread>
+#include <mutex>
+#include <map>
 #include "ClientSession.h"
 #include "Utility.h"
 #include "IOCPWorker.h"
@@ -26,6 +28,7 @@ public:
     void Stop();
     static LockFreeQueue<std::unique_ptr<ICommand>>& GetGLTInputQueue();
     Persistence& GetPersistence() { return *persistence_; }
+    void RemoveSession(uint32_t sessionId);
 
 private:
     RoomManager roomManager_;
@@ -47,7 +50,7 @@ private:
 
     // 클라이언트 세션 관리 (ID 매핑)
     std::mutex sessionMutex_;
-    std::vector<std::shared_ptr<ClientSession>> sessions_;
+    std::map<uint32_t, std::shared_ptr<ClientSession>> sessions_;
     std::atomic<uint32_t> nextSessionId_ = 1;
 
     void AcceptLoop();

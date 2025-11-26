@@ -1,13 +1,12 @@
 #pragma once
 
-#include "Protocol.pb.h"
 #include <winsock2.h>
 #include <mutex>
 #include <string>
 #include "Utility.h"
 #include "Command.h"
-#include "Server.h"
 #include "LockFreeQueue.h"
+#include "NetProtocol.h"
 
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -22,6 +21,7 @@ public:
     // 네트워크 I/O 관련
     SOCKET GetSocket() const { return socket_; }
     uint32_t GetSessionId() const { return sessionId_; }
+    void Disconnect();
 
     // I/O 완료 시 사용되는 오버랩 데이터
     PER_IO_DATA recvIoData_;
@@ -33,7 +33,7 @@ public:
     int currentRoomId_;
     std::string username_;
 
-    void Send(Protocol::PacketId id, const std::string& serializedData);
+    void Send(PacketId id, const std::string& serializedData);
 
     // 비동기 Recv를 다시 거는 함수
     void PostRecv(HANDLE hIOCP);

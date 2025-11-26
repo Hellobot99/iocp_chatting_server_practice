@@ -1,19 +1,17 @@
 #include "IOCPWorker.h"
 #include "ClientSession.h"
-#include "Command.h"
-#include "Server.h"
+#include <iostream>
 
 DWORD WINAPI IOCPWorkerThread(LPVOID arg)
 {
-    HANDLE hIOCP = (HANDLE)arg; // Server::Start()에서 넘겨받은 IOCP 핸들
-    DWORD bytesTransferred;
-    ULONG_PTR completionKey;
-    PER_IO_DATA* pIoData = nullptr; // 오버랩 구조체 (Recv/Send 결과)
+    HANDLE hIOCP = (HANDLE)arg;
+    DWORD bytesTransferred = 0;
+    ULONG_PTR completionKey = 0;
+    PER_IO_DATA* pIoData = nullptr;
 
-    // IOCP 워커 스레드는 무한 루프를 돌며 OS로부터 I/O 완료 알림을 기다립니다. [1, 2]
     while (true)
     {
-        // GetQueuedCompletionStatus 호출 시점에서 스레드는 블로킹 상태로 진입합니다.
+        // 1. I/O 완료 대기
         BOOL ok = GetQueuedCompletionStatus(
             hIOCP,
             &bytesTransferred,
@@ -22,34 +20,32 @@ DWORD WINAPI IOCPWorkerThread(LPVOID arg)
             INFINITE
         );
 
-        // CompletionKey는 ClientSession* 포인터입니다. [3]
-        // ULONG_PTR -> ClientSession* 캐스팅은 매번 필요합니다.
+        // CompletionKey는 우리가 등록한 ClientSession 포인터
         ClientSession* pSession = reinterpret_cast<ClientSession*>(completionKey);
 
-        // 1. I/O 실패, 연결 해제 또는 서버 종료 처리
+        // 2. 에러 처리 및 연결 종료 감지
+        // - ok가 FALSE면 IOCP 에러
+        // - bytesTransferred가 0이면 상대방이 소켓을 닫음 (Graceful Close)
         if (!ok || bytesTransferred == 0)
         {
-            // bytesTransferred == 0은 정상적인 연결 해제 또는 에러를 의미합니다.
-            // pIoData가 Send 작업 완료로 인한 것이 아니라면, 여기서 pIoData를 삭제해야 합니다.
-            // (pIoData가 nullptr이 아닌 경우에만 삭제 로직 필요)
-            if (pIoData) {
-                // pIoData 삭제 또는 재활용 로직 (복잡하므로 간략화)
-                // 현재 세션의 pIoData가 아니라면 여기서 메모리 해제를 시도합니다.
+            // [수정됨] 주석을 지우고 Disconnect 호출
+            if (pSession)
+            {
+                // 세션 내부에서 closesocket() 하고 Server에게 나를 지워달라고 요청함
+                pSession->Disconnect();
             }
 
-            // 클라이언트 세션 정리 로직 (Server::sessions_에서 제거, 소켓 닫기)
-            // closesocket(pSession->GetSocket());
-            // Server::RemoveSession(pSession->GetSessionId());
-
-            continue; // 다음 I/O 완료를 기다립니다.
+            // 연결이 끊겼으므로 더 이상 처리하지 않고 다음 대기로 넘어감
+            continue;
         }
 
-        // 2. I/O 작업 타입 분류 (Recv 완료 또는 Send 완료)
-        if (pIoData->operation == 0) // Recv 완료
+        // 3. I/O 작업 종류에 따른 처리
+        // pIoData는 ClientSession 멤버 변수의 주소이므로 별도 delete 불필요
+        if (pIoData->operation == 0) // RECV 완료
         {
             pSession->OnRecv(bytesTransferred);
         }
-        else if (pIoData->operation == 1) // Send 완료
+        else if (pIoData->operation == 1) // SEND 완료
         {
             pSession->OnSendCompleted(bytesTransferred);
         }

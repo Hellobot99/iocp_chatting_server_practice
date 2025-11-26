@@ -1,9 +1,10 @@
-#include "Protocol.pb.h"
+#include <iostream>
 #include "ClientSession.h"
 #include "NetProtocol.h"
-
+#include "Server.h"
 #include "Command.h"
-#include <iostream>
+
+extern Server* g_Server;
 
 ClientSession::ClientSession(SOCKET sock, uint32_t sessionId)
     : socket_(sock), sessionId_(sessionId), currentRoomId_(-1)
@@ -18,7 +19,18 @@ ClientSession::~ClientSession()
     closesocket(socket_);
 }
 
-void ClientSession::Send(Protocol::PacketId id, const std::string& serializedData)
+void ClientSession::Disconnect()
+{
+    if (socket_ == INVALID_SOCKET) return;
+    closesocket(socket_);
+    socket_ = INVALID_SOCKET;
+    std::cout << "[Session] Disconnected Client: " << sessionId_ << std::endl;
+
+    if (g_Server)
+        g_Server->RemoveSession(sessionId_);
+}
+
+void ClientSession::Send(PacketId id, const std::string& serializedData)
 {
     const uint16_t dataSize = static_cast<uint16_t>(serializedData.size());
     const uint16_t packetSize = sizeof(GameHeader) + dataSize;
@@ -143,52 +155,58 @@ std::unique_ptr<ICommand> ClientSession::DeserializeCommand()
 {
     std::lock_guard<std::mutex> lock(lock_);
 
-    // 이미 OnRecv에서 사이즈 체크를 다 하고 들어오므로, 
-    // 여기서는 바로 'readPos_' 위치의 데이터를 파싱만 하면 됩니다.
-
-    // 1. 헤더 읽기 (readPos_ 위치에서!)
+    // 1. 헤더 읽기
     GameHeader* header = reinterpret_cast<GameHeader*>(&inputBuffer_[readPos_]);
 
-    // 2. Protobuf 파싱을 위한 포인터 계산
-    // 헤더 바로 뒷부분
+    // 2. 바디 포인터 계산
     const char* bodyPtr = reinterpret_cast<const char*>(&inputBuffer_[readPos_]) + sizeof(GameHeader);
     int bodySize = header->packetSize - sizeof(GameHeader);
 
     std::unique_ptr<ICommand> command = nullptr;
 
-    // 3. 패킷 ID에 따라 분기
-    switch (header->packetId)
+    // 패킷 ID (enum class 형변환)
+    PacketId pktId = static_cast<PacketId>(header->packetId);
+
+    switch (pktId)
     {
-    case Protocol::C_LOGIN:
+    case PacketId::LOGIN:
     {
-        Protocol::C_Login pkt;
-        if (pkt.ParseFromArray(bodyPtr, bodySize))
-        {
-            std::cout << "-----------------------------------" << std::endl;
-            std::cout << "[RECV] 패킷 ID: " << header->packetId << " (C_LOGIN)" << std::endl;
-            std::cout << "[DATA] 유저 ID: " << pkt.unique_id() << std::endl;
-            std::cout << "-----------------------------------" << std::endl;
-        }
+        // 로그인 패킷 처리 (지금은 데이터가 없으므로 로그만)
+        std::cout << "[RECV] LOGIN Request" << std::endl;
+        // 필요하다면 Command 생성
     }
     break;
 
-    case Protocol::C_CHAT:
+    case PacketId::CHAT:
     {
-        Protocol::C_Chat pkt;
-        if (pkt.ParseFromArray(bodyPtr, bodySize))
+        const PacketChat* pkt = reinterpret_cast<const PacketChat*>(bodyPtr);
+
+        std::string msg = pkt->msg;
+
+        command = std::make_unique<ChatCommand>(sessionId_, msg);
+    }
+    break;
+
+    case PacketId::MOVE:
+    {
+        // 이동 패킷: 구조체로 캐스팅
+        // 데이터 크기 체크 (안전장치)
+        if (bodySize < sizeof(PacketMove))
         {
-            std::cout << "-----------------------------------" << std::endl;
-            std::cout << "[RECV] 패킷 ID: " << header->packetId << " (C_CHAT)" << std::endl;
-            std::cout << "[DATA] 닉네임: " << pkt.username() << std::endl;
-            std::cout << "[DATA] 메시지: " << pkt.message() << std::endl;
-            std::cout << "-----------------------------------" << std::endl;
+            std::cout << "[Error] Invalid Move Packet Size" << std::endl;
+            return nullptr;
         }
+
+        const PacketMove* pkt = reinterpret_cast<const PacketMove*>(bodyPtr);
+
+        // 구조체의 vx, vy를 꺼내서 Command 생성
+        command = std::make_unique<MoveCommand>(sessionId_, pkt->vx, pkt->vy);
     }
     break;
 
     default:
-        std::cout << "[RECV] 알 수 없는 패킷 ID: " << header->packetId << std::endl;
-        break;
+        std::cout << "[RECV] Unknown Packet ID: " << header->packetId << std::endl;
+        return nullptr;
     }
 
     return command;
@@ -200,29 +218,37 @@ void ClientSession::OnRecv(DWORD bytesTransferred)
 
     while (true)
     {
-        // 유효 데이터 크기
         int dataSize = writePos_ - readPos_;
         if (dataSize < sizeof(GameHeader)) break;
 
         GameHeader* header = reinterpret_cast<GameHeader*>(&inputBuffer_[readPos_]);
         if (dataSize < header->packetSize) break;
 
-        // 파싱
         std::unique_ptr<ICommand> command = DeserializeCommand();
 
         if (command != nullptr) {
-            // 성공 시 읽기 커서 이동
             readPos_ += header->packetSize;
             Server::GetGLTInputQueue().Push(std::move(command));
         }
         else {
-            break;
+            // [에러 처리]
+            // 헤더는 읽혔는데(ID는 알겠는데) 파싱이 실패했거나, 알 수 없는 ID인 경우
+            // 여기서 연결을 끊어야 안전합니다.
+            // (Login 패킷처럼 커맨드를 안 만드는 경우는 예외 처리 필요)
+
+            PacketId pktId = static_cast<PacketId>(header->packetId);
+            if (pktId == PacketId::LOGIN) {
+                // 로그인 패킷은 커맨드를 안 만들었으므로 정상 처리로 간주하고 스킵
+                readPos_ += header->packetSize;
+            }
+            else {
+                std::cout << "[Session] Error or Unknown Packet. Disconnecting..." << std::endl;
+                Disconnect();
+                return;
+            }
         }
     }
 
-    // [버퍼 리셋 로직]
-    // 읽을 데이터를 다 읽어서 readPos가 writePos를 따라잡았다면,
-    // 둘 다 0으로 돌려서 버퍼를 처음부터 다시 쓸 수 있게 해줍니다.
     if (readPos_ == writePos_)
     {
         readPos_ = 0;
