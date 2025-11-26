@@ -1,3 +1,4 @@
+#include <iostream>
 #include "Server.h"
 #include "IOCPWorker.h"
 #include "GameLogic.h"
@@ -6,13 +7,15 @@
 extern DWORD WINAPI IOCPWorkerThread(LPVOID arg);
 LockFreeQueue<std::unique_ptr<ICommand>> Server::s_gltInputQueue;
 
+Server* g_Server = nullptr;
+
 Server::Server(int iocpThreadCount, int dbThreadCount)
     : hIOCP_(NULL),
     listenSock_(INVALID_SOCKET),
     nextSessionId_(1)
 {
     persistence_ = std::make_unique<Persistence>(dbThreadCount);
-    persistence_->Initialize("tcp://127.0.0.1:3306", "root", "1234", "127.0.0.1", 6379);
+    persistence_->Initialize("tcp://127.0.0.1:3306", "root", "1234");
 
     gameLogic_ = std::make_unique<GameLogic>(Server::GetGLTInputQueue(), roomManager_, *persistence_);
     iocpThreadCount_ = iocpThreadCount;
@@ -68,6 +71,11 @@ void Server::Stop()
 {
     // 1. Accept 루프 정지
     accepting_ = false;
+
+    if (listenSock_ != INVALID_SOCKET) {
+        closesocket(listenSock_);
+        listenSock_ = INVALID_SOCKET;
+    }
 
     if (acceptThread_.joinable()) 
     {
@@ -139,7 +147,7 @@ void Server::HandleNewClient(SOCKET clientSock)
     auto newSession = std::make_shared<ClientSession>(clientSock, newId);
 
     std::lock_guard<std::mutex> lock(sessionMutex_);
-    sessions_.push_back(newSession);
+    sessions_.emplace(newId, newSession);
 
     CreateIoCompletionPort(
         (HANDLE)clientSock,
@@ -149,4 +157,10 @@ void Server::HandleNewClient(SOCKET clientSock)
     );
 
     newSession->PostRecv(hIOCP_);
+}
+
+void Server::RemoveSession(uint32_t sessionId)
+{
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+    sessions_.erase(sessionId);
 }

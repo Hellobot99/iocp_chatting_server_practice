@@ -1,5 +1,5 @@
-#include "Server.h"
 #include <iostream>
+#include "Server.h"
 
 int main()
 {
@@ -10,7 +10,7 @@ int main()
 
     std::cout << "Server starting..." << std::endl;
 
-    if (!gameServer.GetPersistence().Initialize("tcp://127.0.0.1:3306", "root", "1234", "127.0.0.1", 6379))
+    if (!gameServer.GetPersistence().Initialize("tcp://127.0.0.1:3306", "root", "1234"))
     {
         std::cerr << "DB Initialization Failed!" << std::endl;
         return -1;
@@ -20,7 +20,15 @@ int main()
         std::cout << "Server is running." << std::endl;
 
         while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::string command;
+            std::cin >> command;
+
+            if (command == "quit") {
+                break; // 루프 탈출 -> main 함수 종료 -> gameServer 소멸자 호출 -> Stop() 실행
+            }
+
+            // 필요하다면 여기에 "kick 10" 같은 관리자 명령어 처리 로직을 넣을 수도 있음
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
     else {

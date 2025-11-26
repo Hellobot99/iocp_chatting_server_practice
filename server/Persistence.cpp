@@ -1,6 +1,6 @@
+#include <iostream>
 #include "Persistence.h"
 #include "PersistenceRequest.h"
-#include <iostream>
 
 Persistence::Persistence(int threadCount)
     : threadCount_(threadCount), running_(false)
@@ -13,30 +13,19 @@ Persistence::~Persistence()
     Stop();
 }
 
-bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass, const std::string& redisHost, int redisPort)
+// [변경] Redis 파라미터 삭제
+bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass)
 {
     dbUrl_ = dbUrl;
     dbUser_ = dbUser;
     dbPass_ = dbPass;
-    redisHost_ = redisHost;
-    redisPort_ = redisPort;
 
     try {
-        // 1. 스레드 개수만큼 DB 연결을 미리 생성 (풀링)
+        // 1. 스레드 개수만큼 DB 연결 생성
         for (int i = 0; i < threadCount_; ++i) {
             sql::Connection* con = driver_->connect(dbUrl_, dbUser_, dbPass_);
-            con->setSchema("chatdb");
-            mysqlConnectionPool_.push_back(con);
-
-            redisContext* ctx = redisConnect(redisHost_.c_str(), redisPort_);
-            if (ctx == nullptr || ctx->err) {
-                std::cerr << "[Persistence] Redis Connect Failed\n";
-                if (ctx) redisFree(ctx);
-                redisContextPool_.push_back(nullptr);
-            }
-            else {
-                redisContextPool_.push_back(ctx);
-            }
+            con->setSchema("chatdb"); // 스키마 설정
+            connections_.push_back(con);
         }
     }
     catch (sql::SQLException& e) {
@@ -44,7 +33,7 @@ bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser
         return false;
     }
 
-    // 2. 워커 스레드 시작 (DBWorkerThread 함수 대신 WorkerLoop 멤버 함수 실행)
+    // 2. 워커 스레드 시작
     running_ = true;
     for (int i = 0; i < threadCount_; ++i) {
         workers_.emplace_back(&Persistence::WorkerLoop, this);
@@ -58,17 +47,17 @@ void Persistence::Stop()
 {
     if (!running_) return;
     running_ = false;
-    cv_.notify_all();
+    cv_.notify_all(); // 자고 있는 스레드 다 깨움
 
     for (auto& t : workers_) {
         if (t.joinable()) t.join();
     }
 
-    std::lock_guard<std::mutex> lock(poolMutex_);
-    for (auto* con : mysqlConnectionPool_) delete con;
-    mysqlConnectionPool_.clear();
-    for (auto* ctx : redisContextPool_) if (ctx) redisFree(ctx);
-    redisContextPool_.clear();
+    // 연결 해제
+    for (auto* con : connections_) {
+        delete con;
+    }
+    connections_.clear();
 }
 
 void Persistence::PostRequest(std::unique_ptr<PersistenceRequest> request)
@@ -80,38 +69,19 @@ void Persistence::PostRequest(std::unique_ptr<PersistenceRequest> request)
     cv_.notify_one();
 }
 
-bool Persistence::TryGetRequest(std::unique_ptr<PersistenceRequest>& request)
+// [변경] Redis 인자 및 로직 삭제
+void Persistence::ProcessSaveChat(sql::Connection* con, const PersistenceRequest& req)
 {
-    std::lock_guard<std::mutex> lock(queueMutex_);
-    if (requestQueue_.empty()) return false;
+    if (!con) return;
 
-    request = std::move(requestQueue_.front());
-    requestQueue_.pop();
-    return true;
-}
-
-// ★ 기존 ProcessSaveChat 로직을 여기로 가져옴 (헬퍼 함수)
-void Persistence::ProcessSaveChat(sql::Connection* con, redisContext* redis, const PersistenceRequest& req)
-{
     try {
-        // 1. MySQL 저장
-        if (con) {
-            std::unique_ptr<sql::PreparedStatement> pstmt(
-                con->prepareStatement("INSERT INTO chat_logs(username, message) VALUES(?, ?)")
-            );
-            pstmt->setString(1, req.userName);
-            pstmt->setString(2, req.message);
-            pstmt->execute();
-        }
-
-        // 2. Redis 캐싱 (Cache-Aside)
-        if (redis) {
-            std::string val = req.userName + ": " + req.message;
-            redisReply* reply = (redisReply*)redisCommand(redis, "LPUSH recent_chat %s", val.c_str());
-            freeReplyObject(reply);
-            reply = (redisReply*)redisCommand(redis, "LTRIM recent_chat 0 49");
-            freeReplyObject(reply);
-        }
+        // MySQL 저장만 수행
+        std::unique_ptr<sql::PreparedStatement> pstmt(
+            con->prepareStatement("INSERT INTO chat_logs(username, message) VALUES(?, ?)")
+        );
+        pstmt->setString(1, req.userName);
+        pstmt->setString(2, req.message);
+        pstmt->execute();
     }
     catch (sql::SQLException& e) {
         std::cerr << "[DB Error] " << e.what() << std::endl;
@@ -120,19 +90,13 @@ void Persistence::ProcessSaveChat(sql::Connection* con, redisContext* redis, con
 
 void Persistence::WorkerLoop()
 {
-    // 스레드별 전용 연결 가져오기
+    // 1. 내 전용 DB 연결 가져오기
     sql::Connection* myCon = nullptr;
-    redisContext* myRedis = nullptr;
-
     {
-        std::lock_guard<std::mutex> lock(poolMutex_);
-        if (!mysqlConnectionPool_.empty()) {
-            myCon = mysqlConnectionPool_.back();
-            mysqlConnectionPool_.pop_back();
-        }
-        if (!redisContextPool_.empty()) {
-            myRedis = redisContextPool_.back();
-            redisContextPool_.pop_back();
+        std::lock_guard<std::mutex> lock(connectionMutex_);
+        if (!connections_.empty()) {
+            myCon = connections_.back();
+            connections_.pop_back();
         }
     }
 
@@ -153,54 +117,16 @@ void Persistence::WorkerLoop()
         }
 
         if (req) {
-            // ★ 여기서 요청 타입에 따라 분기 처리
             switch (req->type)
             {
             case RequestType::SAVE_CHAT:
-                ProcessSaveChat(myCon, myRedis, *req);
+                // [변경] Redis 인자 없이 호출
+                ProcessSaveChat(myCon, *req);
                 break;
-                // case RequestType::LOAD_USER_DATA: ...
             }
         }
     }
-}
 
-sql::Connection* Persistence::GetMySqlConnection()
-{
-    // 1. 풀(Pool) 접근 보호를 위해 락을 겁니다.
-    std::lock_guard<std::mutex> lock(poolMutex_);
-
-    // 2. 풀에 남은 연결이 있는지 확인합니다.
-    if (mysqlConnectionPool_.empty())
-    {
-        return nullptr; // 사용 가능한 연결이 없음 (Initialize 실패 혹은 스레드 수 초과)
-    }
-
-    // 3. 벡터의 맨 뒤에 있는 연결을 가져옵니다.
-    sql::Connection* con = mysqlConnectionPool_.back();
-
-    // 4. 가져온 연결은 풀 목록에서 제거합니다. (해당 스레드에게 소유권을 넘김)
-    mysqlConnectionPool_.pop_back();
-
-    return con;
-}
-
-redisContext* Persistence::GetRedisContext()
-{
-    // 1. 풀 접근 보호
-    std::lock_guard<std::mutex> lock(poolMutex_);
-
-    // 2. 연결 확인
-    if (redisContextPool_.empty())
-    {
-        return nullptr;
-    }
-
-    // 3. 연결 가져오기
-    redisContext* ctx = redisContextPool_.back();
-
-    // 4. 목록에서 제거
-    redisContextPool_.pop_back();
-
-    return ctx;
+    // 스레드 종료 시 연결은 Persistence::Stop()에서 일괄 해제하므로 여기서는 놔둠
+    // (또는 다시 connections_ 벡터에 반납해도 되지만, 서버 종료 시점이므로 생략 가능)
 }

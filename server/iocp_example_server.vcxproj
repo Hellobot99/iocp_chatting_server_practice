@@ -113,8 +113,8 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\Users\User\Desktop\Code\protobuf-main\build\Release;C:\Users\User\Downloads\mysql-connector-c++-9.4.0-winx64-debug\mysql-connector-c++-9.4.0-winx64\lib64;C:\Program Files\hiredis\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>%(AdditionalDependencies);mysqlcppconn.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\User\Desktop\Code\protobuf-main\build\Release;C:\Program Files\MySQL\mysql-connector-c++-9.4.0-winx64\lib64\debug\vs14;C:\Program Files\MySQL\mysql-connector-c++-9.4.0-winx64\lib64\debug;C:\Users\User\Downloads\mysql-connector-c++-9.4.0-winx64-debug\mysql-connector-c++-9.4.0-winx64\lib64;C:\Program Files\hiredis\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -125,6 +125,7 @@
       <SDLCheck>false</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\unity\iocp_chatting_server_practice\server\Protocol;C:\Users\User\Desktop\Code\protobuf-main\src;C:\Program Files\MySQL\mysql-connector-c++-9.4.0-winx64\include\jdbc;C:\Program Files\hiredis\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -143,7 +144,6 @@
     </ClCompile>
     <ClCompile Include="Persistence.cpp" />
     <ClCompile Include="PlayerState.cpp" />
-    <ClCompile Include="Protocol\Protocol.pb.cc" />
     <ClCompile Include="RoomManager.cpp" />
     <ClCompile Include="Server.cpp" />
   </ItemGroup>

@@ -14,7 +14,6 @@ struct PER_IO_DATA {
     int operation; // 0: recv, 1: send
 };
 
-// 위치 벡터 (Fixed Timestep 시뮬레이션을 위해 float 또는 고정 소수점 사용 권장)
 struct Vector2
 {
     float x;
