@@ -24,7 +24,7 @@ int main()
             std::cin >> command;
 
             if (command == "quit") {
-                break; // 루프 탈출 -> main 함수 종료 -> gameServer 소멸자 호출 -> Stop() 실행
+                break;
             }
 
             // 필요하다면 여기에 "kick 10" 같은 관리자 명령어 처리 로직을 넣을 수도 있음
