@@ -13,7 +13,6 @@ Persistence::~Persistence()
     Stop();
 }
 
-// [변경] Redis 파라미터 삭제
 bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass)
 {
     dbUrl_ = dbUrl;
@@ -69,18 +68,23 @@ void Persistence::PostRequest(std::unique_ptr<PersistenceRequest> request)
     cv_.notify_one();
 }
 
-// [변경] Redis 인자 및 로직 삭제
+// [수정됨] 테이블 스키마(session_id, user_name, message)에 맞게 쿼리 수정
 void Persistence::ProcessSaveChat(sql::Connection* con, const PersistenceRequest& req)
 {
     if (!con) return;
 
     try {
-        // MySQL 저장만 수행
+        // MySQL 저장 수행
+        // 테이블 구조: id(auto), session_id, user_name, message, created_at(auto)
         std::unique_ptr<sql::PreparedStatement> pstmt(
-            con->prepareStatement("INSERT INTO chat_logs(username, message) VALUES(?, ?)")
+            con->prepareStatement("INSERT INTO chat_logs(session_id, user_name, message) VALUES(?, ?, ?)")
         );
-        pstmt->setString(1, req.userName);
-        pstmt->setString(2, req.message);
+
+        // 파라미터 바인딩 (순서 중요)
+        pstmt->setInt(1, req.sessionId);      // 1번 ?: session_id
+        pstmt->setString(2, req.userName);    // 2번 ?: user_name
+        pstmt->setString(3, req.message);     // 3번 ?: message
+
         pstmt->execute();
     }
     catch (sql::SQLException& e) {
@@ -98,6 +102,12 @@ void Persistence::WorkerLoop()
             myCon = connections_.back();
             connections_.pop_back();
         }
+    }
+
+    // 연결을 못 가져왔으면 스레드 종료 (안전장치)
+    if (myCon == nullptr) {
+        std::cerr << "[Persistence] Worker failed to get DB connection!" << std::endl;
+        return;
     }
 
     while (running_)
@@ -120,13 +130,12 @@ void Persistence::WorkerLoop()
             switch (req->type)
             {
             case RequestType::SAVE_CHAT:
-                // [변경] Redis 인자 없이 호출
                 ProcessSaveChat(myCon, *req);
                 break;
             }
         }
     }
 
-    // 스레드 종료 시 연결은 Persistence::Stop()에서 일괄 해제하므로 여기서는 놔둠
-    // (또는 다시 connections_ 벡터에 반납해도 되지만, 서버 종료 시점이므로 생략 가능)
+    // 스레드 종료 시 연결 정리 (선택사항: 다시 풀에 넣거나 여기서 해제)
+    // 현재 구조에서는 Stop()에서 일괄 삭제하므로 그냥 둡니다.
 }

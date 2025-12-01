@@ -19,8 +19,8 @@ struct GameHeader
 
 struct PacketLogin
 {
-    // 예: 유저 ID 등 필요한 데이터
-    // (지금은 비워둠)
+    int32_t roomId;
+    char name[32];
 };
 
 // 3. 이동 패킷 구조체
@@ -32,6 +32,7 @@ struct PacketMove
 
 struct PacketChat
 {
+    uint32_t playerId;
     char msg[256];
 };
 

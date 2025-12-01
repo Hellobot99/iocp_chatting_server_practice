@@ -7,8 +7,6 @@
 extern DWORD WINAPI IOCPWorkerThread(LPVOID arg);
 LockFreeQueue<std::unique_ptr<ICommand>> Server::s_gltInputQueue;
 
-Server* g_Server = nullptr;
-
 Server::Server(int iocpThreadCount, int dbThreadCount)
     : hIOCP_(NULL),
     listenSock_(INVALID_SOCKET),
@@ -163,4 +161,15 @@ void Server::RemoveSession(uint32_t sessionId)
 {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     sessions_.erase(sessionId);
+}
+
+std::shared_ptr<ClientSession> Server::GetSession(uint32_t id)
+{
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+    auto it = sessions_.find(id);
+
+    if (it == sessions_.end())
+        return nullptr;
+
+    return it->second;
 }

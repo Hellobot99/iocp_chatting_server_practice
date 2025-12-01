@@ -1,12 +1,15 @@
 #include <iostream>
 #include "Server.h"
 
+Server* g_Server = nullptr;
+
 int main()
 {
     const int iocpThreadCount = 4;
     const int dbThreadCount = 2;
 
     Server gameServer(iocpThreadCount, dbThreadCount);
+    g_Server = &gameServer;
 
     std::cout << "Server starting..." << std::endl;
 
@@ -27,7 +30,6 @@ int main()
                 break;
             }
 
-            // 필요하다면 여기에 "kick 10" 같은 관리자 명령어 처리 로직을 넣을 수도 있음
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }

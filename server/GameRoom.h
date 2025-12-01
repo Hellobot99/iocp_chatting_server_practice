@@ -18,6 +18,7 @@ public:
     GameRoom(int id, const std::string& name);
 
     int GetId() const { return id_; }
+    int GetPlayerCount();
 
     void Update(float fixedDeltaTime);
 
@@ -25,7 +26,7 @@ public:
     void RemovePlayer(uint32_t sessionId);
 
     void BroadcastStateSnapshot(uint32_t serverTick);
-    void BroadcastChat(uint32_t senderId, const std::string& message);
+    void BroadcastChat(const std::string& senderName, const std::string& message);
 
     std::shared_ptr<PlayerState> GetPlayer(uint32_t sessionId);
 

@@ -10,6 +10,12 @@ GameRoom::GameRoom(int id, const std::string& name)
 {
 }
 
+int GameRoom::GetPlayerCount() {
+    std::lock_guard<std::mutex> lock(roomMutex_);
+    
+    return static_cast<int>(players_.size());
+}
+
 void GameRoom::Update(float fixedDeltaTime)
 {
     // 멀티스레드 환경이므로 Update 중에도 플레이어가 나가거나 들어올 수 있음
@@ -33,8 +39,21 @@ void GameRoom::AddPlayer(std::shared_ptr<PlayerState> player, std::shared_ptr<Cl
 void GameRoom::RemovePlayer(uint32_t sessionId)
 {
     std::lock_guard<std::mutex> lock(roomMutex_);
-    players_.erase(sessionId);
+
+    // erase는 "지운 개수"를 반환합니다. (1이면 성공, 0이면 실패/없음)
+    size_t removedCount = players_.erase(sessionId);
     sessions_.erase(sessionId);
+
+    if (removedCount == 0)
+    {
+        // 여기에 걸린다면, 로직 어딘가에서 이미 지워졌거나 
+        // 애초에 이 방에 들어온 적이 없는 것입니다.
+        std::cout << "[Error] Player " << sessionId << " was NOT found in this room!" << std::endl;
+    }
+    else
+    {
+        std::cout << "[Success] Player " << sessionId << " removed. Remaining: " << players_.size() << std::endl;
+    }
 }
 
 void GameRoom::BroadcastStateSnapshot(uint32_t serverTick)
@@ -88,19 +107,31 @@ void GameRoom::BroadcastStateSnapshot(uint32_t serverTick)
     }
 }
 
-// [핵심 수정 2] 채팅 전송: Protobuf 대신 문자열 포맷팅
-void GameRoom::BroadcastChat(uint32_t senderId, const std::string& message)
+
+void GameRoom::BroadcastChat(const std::string& senderName, const std::string& message)
 {
     std::lock_guard<std::mutex> lock(roomMutex_);
 
-    // 포맷: "[SenderID] Message" 형태로 단순 문자열 전송
-    // 혹은 바이너리로 [ID(4)][MsgLen(4)][MsgBody...] 로 짜도 됨
+    // 방법 1: "이름: 메시지" 형태의 단순 문자열로 합쳐서 보냄 (제일 간단)
+    // 클라이언트는 이걸 그대로 채팅창에 띄우면 됨.
+    std::string finalMsg = senderName + ": " + message;
 
-    // 여기서는 간단하게 문자열 합치기로 구현
-    std::string fullMsg = "[" + std::to_string(senderId) + "] " + message;
+    // 패킷 본문 크기 체크 (PacketChat의 msg 배열 크기가 256이라 가정)
+    if (finalMsg.size() >= 256) {
+        finalMsg = finalMsg.substr(0, 255); // 자르기
+    }
+
+    // PacketChat 구조체에 맞춰서 데이터 직렬화
+    PacketChat packetData;
+    std::memset(&packetData, 0, sizeof(PacketChat));
+    std::memcpy(packetData.msg, finalMsg.c_str(), finalMsg.size());
+
+    // string으로 변환해서 Send 호출 (Send 함수가 string을 받으므로)
+    std::string serializedData(reinterpret_cast<char*>(&packetData), sizeof(PacketChat));
 
     for (auto& pair : sessions_) {
-        pair.second->Send(PacketId::CHAT, fullMsg);
+        // 모든 세션에게 전송
+        pair.second->Send(PacketId::CHAT, serializedData);
     }
 }
 

@@ -46,3 +46,18 @@ private:
     uint32_t sessionId_;
     std::string message_;
 };
+
+class LoginCommand : public ICommand {
+public:
+    LoginCommand(uint32_t sessionId, std::string name, int32_t roomId)
+        : sessionId_(sessionId), name_(name), roomId_(roomId)
+    {
+    }
+
+    void Execute(RoomManager& roomManager, Persistence& persistence) override;
+
+private:
+    uint32_t sessionId_;
+    std::string name_;
+    int32_t roomId_;
+};

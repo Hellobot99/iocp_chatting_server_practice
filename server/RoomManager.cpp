@@ -1,60 +1,92 @@
 #include "RoomManager.h"
-#include "ClientSession.h" // 세션 헤더 필요
+#include "ClientSession.h"
+#include "PlayerState.h" // PlayerState 생성 위해 필요
 
 RoomManager::RoomManager() {
     CreateRoom(0, "Lobby");
 }
 
 std::shared_ptr<GameRoom> RoomManager::CreateRoom(int id, const std::string& name) {
-    auto newRoom = std::make_shared<GameRoom>(id, name);
+    std::lock_guard<std::mutex> lock(roomMutex_); // 락
 
-    std::lock_guard<std::mutex> lock(roomMutex_);
+    // 이미 있으면 리턴
+    auto it = rooms_.find(id);
+    if (it != rooms_.end()) return it->second;
+
+    auto newRoom = std::make_shared<GameRoom>(id, name);
     rooms_[id] = newRoom;
     return newRoom;
 }
 
-// GameLogic::Run()에서 매 틱마다 호출됨
 void RoomManager::UpdateAllRooms(float fixedDeltaTime, uint32_t serverTick) {
-
-    // 1. 룸 업데이트 (물리 등)
-    // 2. 스냅샷 브로드캐스트 (매 틱마다 할지, 2~3틱마다 할지는 선택)
-
     std::lock_guard<std::mutex> lock(roomMutex_);
     for (auto& pair : rooms_) {
         auto& room = pair.second;
-
         room->Update(fixedDeltaTime);
-
-        // 여기서는 매 틱마다 보낸다고 가정
         room->BroadcastStateSnapshot(serverTick);
     }
 }
 
-bool RoomManager::JoinRoom(uint32_t sessionId, std::shared_ptr<ClientSession> session, int targetRoomId) {
+// [핵심 수정] cpp 구현부 인자 맞춤, 로직 통합
+bool RoomManager::JoinRoom(std::shared_ptr<ClientSession> session, int targetRoomId)
+{
+    // ★ Lock을 여기서 딱 한 번만 겁니다. 
+    // 이 블록 안에서 GetRoom()이나 CreateRoom()을 호출하면 안 됩니다! (Deadlock 발생)
     std::lock_guard<std::mutex> lock(roomMutex_);
 
-    // 1. 타겟 방 찾기
+    uint32_t sessionId = session->GetSessionId(); // 세션에서 ID 추출
+
+    // 1. 방 찾기 (직접 맵 검색)
+    std::shared_ptr<GameRoom> targetRoom = nullptr;
     auto it = rooms_.find(targetRoomId);
-    if (it == rooms_.end()) return false; // 방 없음
 
-    auto targetRoom = it->second;
-
-    // 2. 기존 방에서 나가기 (이미 방에 있다면)
-    if (playerToRoomMap_.count(sessionId)) {
-        int currentRoomId = playerToRoomMap_[sessionId];
-        if (rooms_.count(currentRoomId)) {
-            rooms_[currentRoomId]->RemovePlayer(sessionId);
-        }
+    if (it == rooms_.end())
+    {
+        // [방 없음] 새로 생성 및 등록
+        // std::cout << "[Logic] Creating new room " << targetRoomId << std::endl;
+        std::string roomName = "Room_" + std::to_string(targetRoomId);
+        targetRoom = std::make_shared<GameRoom>(targetRoomId, roomName);
+        rooms_[targetRoomId] = targetRoom;
+    }
+    else
+    {
+        // [방 있음]
+        targetRoom = it->second;
     }
 
-    // 3. 새 플레이어 상태 생성
-    auto newPlayerState = std::make_shared<PlayerState>(sessionId, "Player", targetRoomId);
+    // 2. 기존 방에서 나가기 처리 (playerToRoomMap_ 활용)
+    if (playerToRoomMap_.count(sessionId))
+    {
+        int oldRoomId = playerToRoomMap_[sessionId];
+        if (oldRoomId == targetRoomId)
+        {
+            // 이미 그 방에 있으면 성공 처리하고 끝
+            return true;
+        }
 
-    // 4. 방에 입장
+        if (rooms_.count(oldRoomId))
+        {
+            rooms_[oldRoomId]->RemovePlayer(sessionId);
+        }
+        playerToRoomMap_.erase(sessionId);
+    }
+
+    // 3. 새 방 입장 처리
+    std::string playerName = session->GetName();
+    auto newPlayerState = std::make_shared<PlayerState>(sessionId, playerName, targetRoomId);
+
+    // [Room]에 플레이어 추가
     targetRoom->AddPlayer(newPlayerState, session);
 
-    // 5. 매핑 정보 갱신
+    // [Manager] 관리 맵에 추가
     playerToRoomMap_[sessionId] = targetRoomId;
+
+    // ★★★ [Session] 세션에도 "현재 방" 정보 입력 (이게 빠져 있었음!) ★★★
+    // 아까 ClientSession::SetCurrentRoom 구현했으므로 여기서 호출
+    session->SetCurrentRoom(targetRoom);
+
+    std::cout << "[RoomManager] Session " << sessionId << " joined Room " << targetRoomId
+        << " (Count: " << targetRoom->GetPlayerCount() << ")" << std::endl;
 
     return true;
 }
@@ -78,12 +110,14 @@ std::shared_ptr<GameRoom> RoomManager::GetRoom(int roomId) {
     return nullptr;
 }
 
-// ★ Command에서 쓰기 위해 추가로 필요할 함수 (헤더에도 추가 필요)
 std::shared_ptr<GameRoom> RoomManager::GetRoomOfPlayer(uint32_t sessionId) {
     std::lock_guard<std::mutex> lock(roomMutex_);
     if (playerToRoomMap_.count(sessionId)) {
         int roomId = playerToRoomMap_[sessionId];
-        return rooms_[roomId]; // map[] 연산자는 주의 필요하지만 여기선 존재 확인했으므로 안전
+        // 맵에 키가 있으면 방도 무조건 있다고 가정 (일관성 유지 필요)
+        if (rooms_.count(roomId)) {
+            return rooms_[roomId];
+        }
     }
     return nullptr;
 }

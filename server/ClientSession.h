@@ -3,6 +3,9 @@
 #include <winsock2.h>
 #include <mutex>
 #include <string>
+#include <vector>
+#include <memory>       // shared_ptr, enable_shared_from_this
+#include <atomic>       // atomic
 #include "Utility.h"
 #include "Command.h"
 #include "LockFreeQueue.h"
@@ -10,13 +13,16 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-// IOCP Completion Key로 사용될 클라이언트 세션 객체
+class GameRoom; // 전방 선언
 
-class ClientSession
+// [수정 1] enable_shared_from_this 상속 추가 (필수!)
+class ClientSession : public std::enable_shared_from_this<ClientSession>
 {
 public:
     ClientSession(SOCKET sock, uint32_t sessionId);
     ~ClientSession();
+
+    enum { BUFFER_SIZE = 65536 };
 
     // 네트워크 I/O 관련
     SOCKET GetSocket() const { return socket_; }
@@ -27,47 +33,61 @@ public:
     PER_IO_DATA recvIoData_;
 
     // TCP 스트림 처리를 위한 입력 버퍼
-    std::vector<char> inputBuffer_;
-    
-    // 게임 상태 관련
-    int currentRoomId_;
-    std::string username_;
+    char inputBuffer_[BUFFER_SIZE] = {};
 
     void Send(PacketId id, const std::string& serializedData);
-
-    // 비동기 Recv를 다시 거는 함수
     void PostRecv(HANDLE hIOCP);
-
-    // GLT가 이 세션에게 패킷 전송을 요청할 때 사용
     void PushSendPacket(const std::vector<char>& packetData);
 
-    // 2. 버퍼에 최소 하나의 완전한 패킷이 있는지 확인합니다.
     bool HasCompletePacket() const;
-
-    // 3. 버퍼에서 완전한 패킷을 추출하고, ICommand 객체로 변환합니다.
     std::unique_ptr<ICommand> DeserializeCommand();
 
     void FlushSend();
-
     void OnRecv(DWORD bytesTransferred);
-
     void OnSendCompleted(DWORD bytesTransferred);
+
+    // [수정 2] 중복 제거 및 통일된 Getter/Setter
+    void SetName(const std::string& name)
+    {
+        std::lock_guard<std::mutex> lock(lock_);
+        name_ = name;
+    }
+
+    std::string GetName()
+    {
+        std::lock_guard<std::mutex> lock(lock_);
+        return name_;
+    }
+
+    void SetCurrentRoom(std::shared_ptr<GameRoom> room)
+    {
+        std::lock_guard<std::mutex> lock(lock_);
+        currentRoom_ = room;
+    }
+
+    std::shared_ptr<GameRoom> GetCurrentRoom()
+    {
+        std::lock_guard<std::mutex> lock(lock_);
+        return currentRoom_;
+    }
 
 private:
     SOCKET socket_;
     uint32_t sessionId_;
-    std::mutex lock_; // 세션 상태 보호용
+
+    std::mutex lock_;       // [수정 3] lock_ 하나로 통일
+    std::string name_ = "Guest";
+    std::shared_ptr<GameRoom> currentRoom_ = nullptr; // [수정 4] 변수명 통일
+
     PER_IO_DATA sendIoData_;
-    int writePos_, readPos_;
+    int writePos_ = 0, readPos_ = 0;
     std::shared_ptr<std::vector<char>> currentSendingPacket_;
 
-    // GLT가 생성한 S2C 패킷을 담는 출력 큐 (IOCP 워커가 비동기 WSASend 실행)
+    // GLT가 생성한 S2C 패킷을 담는 출력 큐
     LockFreeQueue<std::shared_ptr<std::vector<char>>> outputQueue_;
 
-    // 중복 전송 방지 플래그
     std::atomic<bool> isSending_ = false;
 
     void MoveWritePos(DWORD bytes);
-
     void RegisterRecv();
 };
