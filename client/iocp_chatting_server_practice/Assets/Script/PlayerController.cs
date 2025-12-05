@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System;
 
 public class PlayerController : MonoBehaviour
 {
@@ -11,6 +12,7 @@ public class PlayerController : MonoBehaviour
     public float moveSpeed = 5.0f;
 
     private Vector3 serverPosition;
+    private Vector2 _lastSentVelocity = Vector2.zero;
 
     void Start()
     {
@@ -37,29 +39,32 @@ public class PlayerController : MonoBehaviour
         float h = Input.GetAxisRaw("Horizontal");
         float v = Input.GetAxisRaw("Vertical");
 
-        // 입력이 있거나, 이동 중일 때만 전송 (최적화 가능)
-        // 여기서는 간단하게 키 입력이 있을 때만 체크
-        if (h == 0 && v == 0) return;
+        // 1. 현재 프레임의 목표 속도 계산
+        Vector2 currentVelocity = new Vector2(h, v).normalized * moveSpeed;
 
-        if (NetworkManager.Instance != null)
+        // 2. [핵심] "이번 속도"가 "마지막으로 보낸 속도"와 다를 때만 전송
+        // (움직이기 시작할 때, 방향 바꿀 때, 그리고 ★멈출 때★ 전송됨)
+        if (currentVelocity != _lastSentVelocity)
         {
-            // 이동 속도 벡터 계산 (정규화 포함)
-            Vector2 velocity = new Vector2(h, v).normalized * moveSpeed;
-
-            // [변경] 구조체 생성 후 NetworkManager를 통해 전송
-            PacketMove movePkt = new PacketMove
+            if (NetworkManager.Instance != null)
             {
-                vx = velocity.x,
-                vy = velocity.y
-            };
+                PacketMove movePkt = new PacketMove
+                {
+                    vx = currentVelocity.x,
+                    vy = currentVelocity.y
+                };
 
-            NetworkManager.Instance.SendPacket(PacketId.MOVE, movePkt);
+                NetworkManager.Instance.SendPacket(PacketId.MOVE, movePkt);
+                _lastSentVelocity = currentVelocity; // 보낸 속도 갱신
 
-            // 로컬에서의 즉시 반응성을 위해 클라이언트 예측 이동 (Client-side Prediction)
-            // 서버가 위치를 강제하는 방식이라면 이 부분은 주석 처리하거나, 
-            // 서버 응답이 늦을 때를 대비해 살짝 섞어 쓸 수 있습니다.
-            transform.Translate(velocity * Time.deltaTime);
+                // 디버그 로그 (확인용)
+                // Debug.Log($"Packet Sent: {currentVelocity}");
+            }
         }
+
+        // 로컬 이동 (예측 이동)
+        // 입력이 없으면(0,0) Translate도 0이므로 움직이지 않게 됨
+        transform.Translate(currentVelocity * Time.deltaTime);
     }
 
     // [리모트/로컬 공통] 서버에서 받은 위치 데이터 적용 (PacketHandler에서 호출 예정)

@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using UnityEngine;
 using System.Runtime.InteropServices;
+using UnityEngine;
+using UnityEngine.LightTransport;
 
 public class PacketManager
 {
@@ -29,7 +30,9 @@ public class PacketManager
                 HandlePacket<PacketMove>(bodyData, PacketHandler.HandleMovePacket);
                 break;
 
-                // 추후 스냅샷이나 로그인 등 추가 패킷은 여기에 case 추가
+            case PacketId.SNAPSHOT:
+                PacketHandler.HandleSnapshot(bodyData);
+                break;
         }
     }
 
