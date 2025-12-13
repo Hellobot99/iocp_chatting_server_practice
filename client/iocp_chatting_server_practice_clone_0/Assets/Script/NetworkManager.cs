@@ -70,13 +70,27 @@ public class NetworkManager : MonoBehaviour
 
         try
         {
-            byte[] bodyData = StructureToByteArray(packetStruct);
+            byte[] bodyData;
 
+            // [수정 핵심] 입력된 값이 '바이트 배열'이면 변환 없이 그대로 사용
+            if (packetStruct is byte[])
+            {
+                bodyData = (byte[])packetStruct;
+            }
+            else
+            {
+                // 입력된 값이 '구조체'면 바이트로 변환 (기존 로직)
+                bodyData = StructureToByteArray(packetStruct);
+            }
+
+            // 헤더 생성
             GameHeader header = new GameHeader();
             header.packetId = (ushort)id;
             header.packetSize = (ushort)(Marshal.SizeOf(typeof(GameHeader)) + bodyData.Length);
 
             byte[] headerData = StructureToByteArray(header);
+
+            // 최종 패킷 합치기 (헤더 + 바디)
             byte[] packetData = new byte[header.packetSize];
             Array.Copy(headerData, 0, packetData, 0, headerData.Length);
             Array.Copy(bodyData, 0, packetData, headerData.Length, bodyData.Length);
@@ -123,24 +137,6 @@ public class NetworkManager : MonoBehaviour
         {
             CloseConnection();
         }
-    }
-
-    public void SendChat(string text)
-    {
-        PacketChat packet = new PacketChat();
-
-        // 내 플레이어 ID 할당 (필요한 경우)
-        packet.playerId = this.MyPlayerId;
-
-        packet.msg = new byte[256];
-
-        // 인코딩 및 복사
-        byte[] textBytes = System.Text.Encoding.UTF8.GetBytes(text);
-        int copyLen = Math.Min(textBytes.Length, 256 - 1);
-        Array.Copy(textBytes, 0, packet.msg, 0, copyLen);
-
-        // 전송
-        SendPacket(PacketId.CHAT, packet);
     }
 
     bool ReadExact(byte[] buffer, int size)
@@ -190,23 +186,81 @@ public class NetworkManager : MonoBehaviour
         Marshal.FreeHGlobal(ptr);
         return str;
     }
-    public void SendLogin(int roomId, string name)
+
+    // -------------------------------------------------------------
+    // [1] 문자열 변환 헬퍼 (반복되는 코드를 줄이기 위해 추가)
+    // -------------------------------------------------------------
+    private byte[] ToBytes(string str, int size)
     {
-        PacketLogin packet = new PacketLogin();
+        byte[] buffer = new byte[size];
+        if (string.IsNullOrEmpty(str)) return buffer;
 
-        packet.roomId = roomId;     // 방 번호 넣기
-        packet.name = new byte[32]; // 이름 공간
+        byte[] strBytes = System.Text.Encoding.UTF8.GetBytes(str);
+        int copyLen = Math.Min(strBytes.Length, size); // 마지막 null 문자 고려 안 해도 됨 (C++이 알아서 함) or size-1
+        Array.Copy(strBytes, 0, buffer, 0, copyLen);
 
-        // 1. 이름 변환 및 복사 (기존과 동일)
-        byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
-        int copyLen = Math.Min(nameBytes.Length, 32 - 1);
-        Array.Copy(nameBytes, 0, packet.name, 0, copyLen);
-
-        // 2. 구조체를 바이트 배열로 직렬화해서 전송
-        // (구조체에 int가 섞여있으므로 StructureToByteArray 함수 활용 추천)
-        // 만약 수동으로 한다면 아래처럼 해야 함:
-
-        // [간편한 방법] 이미 정의된 StructureToByteArray 사용
-        SendPacket(PacketId.LOGIN, packet);
+        return buffer;
     }
+
+    // -------------------------------------------------------------
+    // [2] 회원가입 요청
+    // -------------------------------------------------------------
+    public void SendRegister(string username, string password)
+    {
+        PacketRegisterReq packet = new PacketRegisterReq();
+
+        // 헬퍼 함수를 써서 깔끔하게 할당 (SizeConst = 50)
+        packet.username = ToBytes(username, 50);
+        packet.password = ToBytes(password, 50);
+
+        SendPacket(PacketId.REGISTER_REQ, packet);
+        Debug.Log($"[Send] Register Request: {username}");
+    }
+
+    // -------------------------------------------------------------
+    // [3] 로그인 요청 (방 번호 없이 아이디/비번만)
+    // -------------------------------------------------------------
+    public void SendLogin(string username, string password)
+    {
+        PacketLoginReq packet = new PacketLoginReq();
+
+        packet.username = ToBytes(username, 50);
+        packet.password = ToBytes(password, 50);
+
+        SendPacket(PacketId.LOGIN_REQ, packet);
+        Debug.Log($"[Send] Login Request: {username}");
+    }
+
+    // -------------------------------------------------------------
+    // [4] 방 입장 요청 (로그인 성공 후 호출)
+    // -------------------------------------------------------------
+    public void SendEnterRoom(int roomId)
+    {
+        PacketEnterRoom packet = new PacketEnterRoom();
+        packet.roomId = roomId;
+
+        SendPacket(PacketId.ENTER_ROOM, packet);
+        Debug.Log($"[Send] Enter Room Request: {roomId}");
+    }
+
+    public void SendChat(string text)
+    {
+        PacketChat packet = new PacketChat();
+        packet.playerId = this.MyPlayerId;
+
+        packet.msg = ToBytes(text, 256);
+
+        SendPacket(PacketId.CHAT, packet);
+    }
+
+    public void SendCreateRoom(string title)
+    {
+        PacketCreateRoomReq packet = new PacketCreateRoomReq();
+        packet.title = ToBytes(title, 32); // 기존에 만든 헬퍼 함수 사용
+
+        SendPacket(PacketId.CREATE_ROOM_REQ, packet);
+    }
+
+
+
 }

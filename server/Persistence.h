@@ -1,20 +1,15 @@
 #pragma once
-
-#include <vector>
-#include <thread>
-#include <memory>
-#include <mutex>
-
-// MySQL 및 Redis 라이브러리 (기존 코드 기반)
 #include <mysql_driver.h>
 #include <mysql_connection.h>
 #include <cppconn/prepared_statement.h>
+#include <cppconn/driver.h>
 #include <cppconn/exception.h>
-#include <cppconn/connection.h>
-// #include <hiredis/hiredis.h>
-#include "Utility.h"
+#include <vector>
+#include <queue>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 #include "PersistenceRequest.h"
-// #include "LockFreeQueue.h"
 
 class Persistence
 {
@@ -22,33 +17,38 @@ public:
     Persistence(int threadCount);
     ~Persistence();
 
-    // [변경] Redis IP/Port 인자 제거
     bool Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass);
     void Stop();
-
     void PostRequest(std::unique_ptr<PersistenceRequest> request);
+
+    // [신규] 동기식 인증 함수
+    int AuthenticateUser(const std::string& username, const std::string& password);
 
 private:
     void WorkerLoop();
     void ProcessSaveChat(sql::Connection* con, const PersistenceRequest& req);
+    void ProcessRegister(sql::Connection* con, const PersistenceRequest& req);
+    void ProcessLogin(sql::Connection* con, const PersistenceRequest& req); // 기존 비동기 (필요 없다면 제거 가능)
+
+    // [신규] 커넥션 헬퍼 함수
+    sql::Connection* GetConnection();
+    void ReturnConnection(sql::Connection* con);
 
 private:
-    int threadCount_;
-    std::vector<std::thread> workers_;
-    bool running_ = true;
+    sql::mysql::MySQL_Driver* driver_;
+    std::vector<sql::Connection*> connections_; // 커넥션 풀
 
-    // 요청 큐
+    std::string dbUrl_;
+    std::string dbUser_;
+    std::string dbPass_;
+
+    std::vector<std::thread> workers_;
     std::queue<std::unique_ptr<PersistenceRequest>> requestQueue_;
+
     std::mutex queueMutex_;
+    std::mutex connectionMutex_; // 커넥션 풀 보호용
     std::condition_variable cv_;
 
-    // DB 접속 정보
-    std::string dbUrl_, dbUser_, dbPass_;
-
-    // MySQL 드라이버
-    sql::mysql::MySQL_Driver* driver_;
-
-    // [변경] 복잡한 풀링 대신, 스레드들이 나눠가질 연결들을 보관만 해두는 용도
-    std::vector<sql::Connection*> connections_;
-    std::mutex connectionMutex_;
+    int threadCount_;
+    bool running_;
 };

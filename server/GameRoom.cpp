@@ -1,6 +1,5 @@
 #include "GameRoom.h"
 #include "ClientSession.h"
-#include "RoomManager.h"
 #include "NetProtocol.h"
 #include <iostream>
 #include <cstring> // memcpy
@@ -12,7 +11,7 @@ GameRoom::GameRoom(int id, const std::string& name)
 
 int GameRoom::GetPlayerCount() {
     std::lock_guard<std::mutex> lock(roomMutex_);
-    
+
     return static_cast<int>(players_.size());
 }
 
@@ -40,19 +39,25 @@ void GameRoom::RemovePlayer(uint32_t sessionId)
 {
     std::lock_guard<std::mutex> lock(roomMutex_);
 
-    // erase는 "지운 개수"를 반환합니다. (1이면 성공, 0이면 실패/없음)
+    auto it = players_.find(sessionId);
+    if (it != players_.end())
+    {
+        PacketLeaveRoom leavePacket;
+        leavePacket.playerId = sessionId;
+
+        BroadcastLocked(PacketId::LEAVE_ROOM, leavePacket, sessionId);
+    }
+
     size_t removedCount = players_.erase(sessionId);
     sessions_.erase(sessionId);
 
     if (removedCount == 0)
     {
-        // 여기에 걸린다면, 로직 어딘가에서 이미 지워졌거나 
-        // 애초에 이 방에 들어온 적이 없는 것입니다.
-        std::cout << "[Error] Player " << sessionId << " was NOT found in this room!" << std::endl;
+        std::cout << "[Error] Player " << sessionId << " Not Found" << std::endl;
     }
     else
     {
-        std::cout << "[Success] Player " << sessionId << " removed. Remaining: " << players_.size() << std::endl;
+        std::cout << "[Success] Player " << sessionId << " Removed." << std::endl;
     }
 }
 
@@ -62,11 +67,6 @@ void GameRoom::BroadcastStateSnapshot(uint32_t serverTick)
 
     if (sessions_.empty()) return;
 
-    // 1. 패킷 데이터 크기 계산
-    // 데이터 구조: [Count(4byte)] + N * [ID(4) + X(4) + Y(4)]
-    // 간단하게 ID, X, Y만 쭉 나열해서 보냅시다.
-
-    // (보낼 데이터 구조체 정의 - 임시)
     struct PlayerPosData {
         uint32_t id;
         float x;
@@ -112,27 +112,16 @@ void GameRoom::BroadcastChat(const std::string& senderName, const std::string& m
 {
     std::lock_guard<std::mutex> lock(roomMutex_);
 
-    // 방법 1: "이름: 메시지" 형태의 단순 문자열로 합쳐서 보냄 (제일 간단)
-    // 클라이언트는 이걸 그대로 채팅창에 띄우면 됨.
     std::string finalMsg = senderName + ": " + message;
+    if (finalMsg.size() >= 256) finalMsg = finalMsg.substr(0, 255);
 
-    // 패킷 본문 크기 체크 (PacketChat의 msg 배열 크기가 256이라 가정)
-    if (finalMsg.size() >= 256) {
-        finalMsg = finalMsg.substr(0, 255); // 자르기
-    }
-
-    // PacketChat 구조체에 맞춰서 데이터 직렬화
+    // 1. 패킷 생성
     PacketChat packetData;
-    std::memset(&packetData, 0, sizeof(PacketChat));
+    packetData.playerId = 0;
+    std::memset(packetData.msg, 0, sizeof(packetData.msg));
     std::memcpy(packetData.msg, finalMsg.c_str(), finalMsg.size());
 
-    // string으로 변환해서 Send 호출 (Send 함수가 string을 받으므로)
-    std::string serializedData(reinterpret_cast<char*>(&packetData), sizeof(PacketChat));
-
-    for (auto& pair : sessions_) {
-        // 모든 세션에게 전송
-        pair.second->Send(PacketId::CHAT, serializedData);
-    }
+    BroadcastLocked(PacketId::CHAT, packetData);
 }
 
 std::shared_ptr<PlayerState> GameRoom::GetPlayer(uint32_t sessionId)

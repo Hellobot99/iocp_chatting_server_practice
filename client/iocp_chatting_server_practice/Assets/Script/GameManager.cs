@@ -11,6 +11,7 @@ public class GameManager : MonoBehaviour
 
     // 접속한 플레이어 목록
     private Dictionary<uint, PlayerController> players = new Dictionary<uint, PlayerController>();
+    public uint MyPlayerId;
 
     void Awake()
     {

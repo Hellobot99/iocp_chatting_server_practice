@@ -131,8 +131,20 @@ void Server::AcceptLoop()
 {
     while (accepting_.load()) {
         SOCKET clientSock = accept(listenSock_, NULL, NULL);
-        std::cout << "New Client connected!\n";
 
+        // [중요] accept가 실패했거나 서버가 종료되는 중이라면 무시해야 함
+        if (clientSock == INVALID_SOCKET)
+        {
+            // 서버 종료 과정에서 발생한 에러라면 루프 종료
+            if (!accepting_.load()) break;
+
+            // 진짜 에러라면 로그 출력 후 계속 대기
+            int err = WSAGetLastError();
+            std::cout << "[Error] Accept Failed: " << err << std::endl;
+            continue;
+        }
+
+        std::cout << "New Client connected! Socket: " << clientSock << "\n";
         HandleNewClient(clientSock);
     }
 }
@@ -172,4 +184,21 @@ std::shared_ptr<ClientSession> Server::GetSession(uint32_t id)
         return nullptr;
 
     return it->second;
+}
+
+bool Server::IsUserConnected(const std::string& username)
+{
+    // 세션 맵을 순회해야 하므로 락 필수
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+
+    for (auto& pair : sessions_)
+    {
+        auto session = pair.second;
+        // 세션이 살아있고, 이름이 같다면 이미 접속 중인 것임
+        if (session && session->GetName() == username)
+        {
+            return true;
+        }
+    }
+    return false;
 }

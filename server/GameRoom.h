@@ -37,4 +37,15 @@ private:
 
     std::map<uint32_t, std::shared_ptr<PlayerState>> players_;
     std::map<uint32_t, std::shared_ptr<ClientSession>> sessions_;
+
+    template<typename T>
+    void BroadcastLocked(PacketId id, const T& packet, uint32_t excludeId = 0)
+    {
+        std::string serializedData(reinterpret_cast<const char*>(&packet), sizeof(T));
+        for (auto& pair : sessions_)
+        {
+            if (pair.first == excludeId) continue;
+            pair.second->Send(id, serializedData);
+        }
+    }
 };

@@ -54,6 +54,21 @@ void ClientSession::Send(PacketId id, const std::string& serializedData)
     PushSendPacket(sendBuffer);
 }
 
+void ClientSession::Send(PacketId id, void* ptr, int size)
+{
+    const uint16_t packetSize = sizeof(GameHeader) + static_cast<uint16_t>(size);
+    std::vector<char> sendBuffer(packetSize);
+
+    GameHeader* header = reinterpret_cast<GameHeader*>(sendBuffer.data());
+    header->packetSize = packetSize;
+    header->packetId = static_cast<uint16_t>(id);
+
+    // string 변환 없이 바로 복사
+    std::memcpy(sendBuffer.data() + sizeof(GameHeader), ptr, size);
+
+    PushSendPacket(sendBuffer);
+}
+
 void ClientSession::PostRecv(HANDLE hIOCP)
 {
     DWORD flags = 0;
@@ -170,20 +185,56 @@ std::unique_ptr<ICommand> ClientSession::DeserializeCommand()
 
     switch (pktId)
     {
-    case PacketId::LOGIN:
+        // [수정] 로그인 요청 처리
+    case PacketId::LOGIN_REQ:
     {
-        if (bodySize < sizeof(PacketLogin)) return nullptr;
+        // 1. 사이즈 체크 (새 구조체 크기)
+        if (bodySize < sizeof(PacketLoginReq)) return nullptr;
 
-        const PacketLogin* pkt = reinterpret_cast<const PacketLogin*>(bodyPtr);
+        // 2. 캐스팅 (새 구조체)
+        const PacketLoginReq* pkt = reinterpret_cast<const PacketLoginReq*>(bodyPtr);
 
-        std::string name(pkt->name);
-        int32_t roomNum = pkt->roomId;
+        // 3. 데이터 추출 (char[] -> string)
+        std::string username(pkt->username);
+        std::string password(pkt->password); // 비밀번호 추가됨
 
-        std::cout << "[RECV] LOGIN / Room: " << roomNum << ", Name: " << name << std::endl;
+        std::cout << "[RECV] LOGIN_REQ / ID: " << username << std::endl;
 
-        command = std::make_unique<LoginCommand>(sessionId_, name, roomNum);
+        // 4. 커맨드 생성 (roomId 제거됨, password 추가됨)
+        command = std::make_unique<LoginCommand>(sessionId_, username, password);
+        break;
     }
-    break;
+
+    // [추가] 회원가입 요청 처리 (새로 만들어야 함)
+    case PacketId::REGISTER_REQ:
+    {
+        if (bodySize < sizeof(PacketRegisterReq)) return nullptr;
+
+        const PacketRegisterReq* pkt = reinterpret_cast<const PacketRegisterReq*>(bodyPtr);
+
+        std::string username(pkt->username);
+        std::string password(pkt->password);
+
+        std::cout << "[RECV] REGISTER_REQ / ID: " << username << std::endl;
+
+        // RegisterCommand 생성
+        command = std::make_unique<RegisterCommand>(sessionId_, username, password);
+        break;
+    }
+
+    // [추가] 방 입장 요청 (로그인 후 따로 들어가는 구조로 변경됨)
+    case PacketId::ENTER_ROOM:
+    {
+        if (bodySize < sizeof(PacketEnterRoom)) return nullptr;
+
+        const PacketEnterRoom* pkt = reinterpret_cast<const PacketEnterRoom*>(bodyPtr);
+        int32_t roomId = pkt->roomId;
+
+        std::cout << "[RECV] ENTER_ROOM / Room: " << roomId << std::endl;
+
+        command = std::make_unique<EnterRoomCommand>(sessionId_, roomId);
+        break;
+    }
 
     case PacketId::CHAT:
     {
@@ -212,10 +263,33 @@ std::unique_ptr<ICommand> ClientSession::DeserializeCommand()
     }
     break;
 
+    case PacketId::CREATE_ROOM_REQ:
+    {
+        if (bodySize < sizeof(PacketCreateRoomReq)) return nullptr;
+        const PacketCreateRoomReq* pkt = reinterpret_cast<const PacketCreateRoomReq*>(bodyPtr);
+
+        std::string title(pkt->title);
+
+        std::cout << "[RECV] CREATE_ROOM / Title: " << title << std::endl;
+        command = std::make_unique<CreateRoomCommand>(sessionId_, title);
+        break;
+    }
+
+    case PacketId::ROOM_LIST_REQ:
+    {
+        // 보낼 데이터(Body)가 없는 패킷이므로 사이즈 체크 불필요(혹은 0인지 체크)
+        std::cout << "[RECV] ROOM_LIST_REQ" << std::endl;
+        command = std::make_unique<RoomListCommand>(sessionId_);
+        break;
+    }
+
+
     default:
         std::cout << "[RECV] Unknown Packet ID: " << header->packetId << std::endl;
         return nullptr;
     }
+
+
 
     return command;
 }
@@ -241,7 +315,7 @@ void ClientSession::OnRecv(DWORD bytesTransferred)
         }
         else {
             PacketId pktId = static_cast<PacketId>(header->packetId);
-            if (pktId == PacketId::LOGIN) {
+            if (pktId == PacketId::LOGIN_REQ) {
                 readPos_ += header->packetSize;
             }
             else {

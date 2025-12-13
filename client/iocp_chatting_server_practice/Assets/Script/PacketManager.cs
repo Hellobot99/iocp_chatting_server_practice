@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+// using UnityEditor; // 빌드 시 에러 날 수 있으므로 필요 없으면 제거 추천
 using UnityEngine;
-using UnityEngine.LightTransport;
+// using UnityEngine.LightTransport; // 필요 없으면 제거
 
 public class PacketManager
 {
@@ -22,6 +23,32 @@ public class PacketManager
     {
         switch (id)
         {
+            // --------------------------------------------------------
+            // [1] 계정 관련 (추가됨)
+            // --------------------------------------------------------
+            case PacketId.REGISTER_RES:
+                HandlePacket<PacketRegisterRes>(bodyData, PacketHandler.HandleRegisterRes);
+                break;
+
+            case PacketId.LOGIN_RES:
+                HandlePacket<PacketLoginRes>(bodyData, PacketHandler.HandleLoginRes);
+                break;
+
+            // --------------------------------------------------------
+            // [2] 로비 관련 (추가됨)
+            // --------------------------------------------------------
+            case PacketId.CREATE_ROOM_RES:
+                HandlePacket<PacketCreateRoomRes>(bodyData, PacketHandler.HandleCreateRoomRes);
+                break;
+
+            case PacketId.ROOM_LIST_RES:
+                // 방 목록은 가변 길이 데이터(배열)이므로 구조체 변환 없이 Raw Data를 바로 넘깁니다.
+                PacketHandler.HandleRoomList(bodyData);
+                break;
+
+            // --------------------------------------------------------
+            // [3] 인게임 플레이
+            // --------------------------------------------------------
             case PacketId.CHAT:
                 HandlePacket<PacketChat>(bodyData, PacketHandler.HandleChatPacket);
                 break;
@@ -31,7 +58,12 @@ public class PacketManager
                 break;
 
             case PacketId.SNAPSHOT:
+                // 스냅샷도 가변 길이(플레이어 수에 따라 다름)이므로 Raw Data 전달
                 PacketHandler.HandleSnapshot(bodyData);
+                break;
+
+            case PacketId.LEAVE_ROOM:
+                HandlePacket<PacketLeaveRoom>(bodyData, PacketHandler.HandleLeavePacket);
                 break;
         }
     }
@@ -50,9 +82,15 @@ public class PacketManager
         if (len > bytearray.Length) return default(T); // 안전장치
 
         IntPtr ptr = Marshal.AllocHGlobal(len);
-        Marshal.Copy(bytearray, 0, ptr, len);
-        T str = (T)Marshal.PtrToStructure(ptr, typeof(T));
-        Marshal.FreeHGlobal(ptr);
-        return str;
+        try
+        {
+            Marshal.Copy(bytearray, 0, ptr, len);
+            return (T)Marshal.PtrToStructure(ptr, typeof(T));
+        }
+        finally
+        {
+            // [중요] 메모리 누수 방지를 위해 finally 블록에서 해제 추천
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 }

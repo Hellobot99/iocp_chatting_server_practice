@@ -36,6 +36,7 @@ public:
     char inputBuffer_[BUFFER_SIZE] = {};
 
     void Send(PacketId id, const std::string& serializedData);
+    void Send(PacketId id, void* ptr, int size);
     void PostRecv(HANDLE hIOCP);
     void PushSendPacket(const std::vector<char>& packetData);
 

@@ -31,6 +31,7 @@ public:
     void RemoveSession(uint32_t sessionId);
     std::shared_ptr<ClientSession> GetSession(uint32_t id);
     RoomManager& GetRoomManager() { return roomManager_; }
+    bool IsUserConnected(const std::string& username);
 
 private:
     RoomManager roomManager_;

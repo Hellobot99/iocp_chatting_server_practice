@@ -4,26 +4,144 @@
 #include "PlayerState.h"
 #include "Persistence.h"
 #include "PersistenceRequest.h"
-#include "Server.h"       
+#include "Server.h"        
 #include "ClientSession.h"
-
 
 extern Server* g_Server;
 
-void MoveCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+// ---------------------------------------------------------
+// [1] 회원가입 커맨드 (DB 작업 요청)
+// ---------------------------------------------------------
+void RegisterCommand::Execute(RoomManager& roomManager, Persistence& persistence)
 {
-    // 1. 세션 가져오기
+    // DB 스레드에 작업 넘기기 (비동기)
+    auto req = std::make_unique<PersistenceRequest>();
+    req->type = RequestType::REGISTER;
+    req->sessionId = sessionId_;
+    req->username = username_;
+    req->password = password_;
+
+    // DB 큐에 넣음 (GameLogic 스레드는 멈추지 않음)
+    persistence.PostRequest(std::move(req));
+}
+
+// ---------------------------------------------------------
+// [2] 로그인 커맨드 (DB 작업 요청)
+// ---------------------------------------------------------
+void LoginCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
+    auto session = g_Server->GetSession(sessionId_);
+    if (!session) return;
+
+    // ---------------------------------------------------------
+    // 1. [실제 로직] DB 인증 시도 (동기식 호출)
+    // ---------------------------------------------------------
+    // 성공 시: 유저의 DB PK(id) 반환
+    // 실패 시: -1 반환
+    int dbId = persistence.AuthenticateUser(username_, password_);
+
+    if (dbId != -1) // DB에 유저가 있고 비밀번호도 맞음
+    {
+        // -----------------------------------------------------
+        // 2. [중복 체크] 이미 접속 중인 아이디인지 확인
+        // -----------------------------------------------------
+        if (g_Server->IsUserConnected(username_))
+        {
+            std::cout << "[Login] Denied duplicate login: " << username_ << std::endl;
+
+            PacketLoginRes res;
+            res.success = false;
+            res.playerId = -1; // 실패 의미
+
+            // (선택) 클라이언트가 "중복 로그인"임을 알 수 있게 별도 에러 코드를 주면 더 좋습니다.
+
+            session->Send(PacketId::LOGIN_RES, &res, sizeof(res));
+            return; // ★ 여기서 중단
+        }
+
+        // -----------------------------------------------------
+        // 3. [로그인 성공] DB 인증 O, 중복 X
+        // -----------------------------------------------------
+
+        // [중요] 세션에 유저 정보 저장
+        session->SetName(username_);  // 아이디 저장
+        // session->SetDbId(dbId);    // (만약 ClientSession에 변수가 있다면 저장 권장)
+
+        PacketLoginRes res;
+        res.success = true;
+        res.playerId = dbId; // ★ 클라이언트에게 DB 고유 ID(PlayerID)를 전달
+
+        session->Send(PacketId::LOGIN_RES, &res, sizeof(res));
+
+        std::cout << "[Login] Success: " << username_ << " (DB_ID: " << dbId << ")" << std::endl;
+    }
+    else
+    {
+        // -----------------------------------------------------
+        // 4. [로그인 실패] 아이디가 없거나 비번이 틀림
+        // -----------------------------------------------------
+        std::cout << "[Login] Failed (Invalid ID or PW): " << username_ << std::endl;
+
+        PacketLoginRes res;
+        res.success = false;
+        res.playerId = -1;
+
+        session->Send(PacketId::LOGIN_RES, &res, sizeof(res));
+    }
+}
+// ---------------------------------------------------------
+// [3] 방 입장 커맨드 (게임 로직)
+// ---------------------------------------------------------
+void EnterRoomCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
     auto session = g_Server->GetSession(sessionId_);
     if (session == nullptr) return;
 
-    // 2. [최적화] 세션에서 바로 방 가져오기 (RoomManager 검색 비용 절약)
+    // 로그인이 안 된 유저가 방 입장을 시도하면 차단
+    if (session->GetName().empty())
+    {
+        std::cout << "[Warning] Unauthenticated user tried to join room." << std::endl;
+        return;
+    }
+
+    std::cout << "[Logic] Trying to Join Room... (Session: " << sessionId_
+        << ", TargetRoom: " << roomId_ << ")" << std::endl;
+
+    bool success = roomManager.JoinRoom(session, roomId_);
+
+    if (success)
+    {
+        std::cout << "[Logic] User " << session->GetName() << " joined Room " << roomId_ << std::endl;
+
+        // (선택) 입장 로그를 DB에 남기고 싶다면 여기서 Persistence 요청 가능
+    }
+    else
+    {
+        std::cout << "[Logic] Failed to join room " << roomId_ << std::endl;
+    }
+}
+
+// ---------------------------------------------------------
+// [4] 방 퇴장 커맨드
+// ---------------------------------------------------------
+void LeaveRoomCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
+    roomManager.RemovePlayerFromCurrentRoom(sessionId_);
+    std::cout << "[Logic] Session " << sessionId_ << " left the room." << std::endl;
+}
+
+// ---------------------------------------------------------
+// [5] 이동 커맨드 (기존 유지)
+// ---------------------------------------------------------
+void MoveCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
+    auto session = g_Server->GetSession(sessionId_);
+    if (session == nullptr) return;
+
     auto room = session->GetCurrentRoom();
     if (room == nullptr) return;
 
-    // 3. 방에서 플레이어 객체 가져오기
-    // (Room 클래스 구현에 따라 다르겠지만, 보통 Room 안에는 PlayerList가 있을 것임)
     auto player = room->GetPlayer(sessionId_);
-
     if (player)
     {
         player->velocity.x = vx_;
@@ -31,61 +149,62 @@ void MoveCommand::Execute(RoomManager& roomManager, Persistence& persistence)
     }
 }
 
+// ---------------------------------------------------------
+// [6] 채팅 커맨드 (기존 유지 + DB 저장)
+// ---------------------------------------------------------
 void ChatCommand::Execute(RoomManager& roomManager, Persistence& persistence)
 {
     auto session = g_Server->GetSession(sessionId_);
     if (session == nullptr) return;
 
-    // 1. 세션에서 현재 방과 이름을 안전하게 가져옴
     auto room = session->GetCurrentRoom();
-    std::string senderName = session->GetName(); // 여기서 미리 가져옴
+    std::string senderName = session->GetName();
 
-    // 2. 방이 존재할 때만 방송 + DB 저장
     if (room)
     {
-        // (1) 채팅 브로드캐스트
+        // (1) 방 안의 사람들에게 브로드캐스트
         room->BroadcastChat(senderName, message_);
 
-        // (2) DB 저장 요청 (방에 뿌려졌을 때만 저장하는 게 맞음)
+        // (2) DB에 채팅 로그 저장 (비동기)
         auto req = std::make_unique<PersistenceRequest>();
         req->type = RequestType::SAVE_CHAT;
         req->sessionId = sessionId_;
-        req->userName = senderName; // 이제 사용 가능
+        req->username = senderName;
         req->message = message_;
 
         persistence.PostRequest(std::move(req));
-
-        // std::cout << "[Chat] " << senderName << ": " << message_ << std::endl;
     }
     else
     {
-        // 방에 없는 상태에서 채팅 시도 -> 에러 처리 or 무시
-        std::cout << "[Logic Error] User " << senderName << " is not in any room." << std::endl;
+        std::cout << "[Logic Error] User " << senderName << " sent chat but is not in a room." << std::endl;
     }
 }
 
-void LoginCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+void CreateRoomCommand::Execute(RoomManager& roomManager, Persistence& persistence)
 {
-    std::shared_ptr<ClientSession> session = g_Server->GetSession(sessionId_);
-    if (session == nullptr) return;
+    auto session = g_Server->GetSession(sessionId_);
+    if (!session) return;
 
-    // 1. 이름 설정
-    session->SetName(name_);
+    // 1. 방 생성 요청
+    auto newRoom = roomManager.CreateRoom(title_);
 
-    std::cout << "[Logic] Trying to Join Room... (Session: " << sessionId_
-        << ", TargetRoom: " << roomId_ << ")" << std::endl;
+    // 2. 결과 패킷 전송
+    PacketCreateRoomRes res;
+    res.success = (newRoom != nullptr);
+    res.roomId = (newRoom != nullptr) ? newRoom->GetId() : -1;
 
-    // 2. [수정] 인자에서 sessionId_ 제거 (session 안에 있음)
-    // JoinRoom 내부에서 "방 찾기 -> 입장 -> session->SetCurrentRoom(room)" 까지 다 처리하도록 구현
-    bool success = roomManager.JoinRoom(session, roomId_);
+    session->Send(PacketId::CREATE_ROOM_RES, &res, sizeof(res));
 
-    if (success)
+    // (선택) 여기서 바로 입장시켜도 되지만, 
+    // 보통은 클라가 응답 받고 EnterRoom을 다시 보내는 게 흐름상 깔끔함.
+}
+
+void RoomListCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
+    // 세션을 찾아서 방 목록 패킷 전송
+    auto session = g_Server->GetSession(sessionId_);
+    if (session)
     {
-        // JoinRoom 안에서 세션에 방 정보를 넣었다면, 여기선 로그만 남기면 됩니다.
-        std::cout << "[Logic] User " << name_ << " joined Room " << roomId_ << std::endl;
-    }
-    else
-    {
-        std::cout << "[Logic] Failed to join room " << roomId_ << std::endl;
+        roomManager.SendRoomList(session);
     }
 }
