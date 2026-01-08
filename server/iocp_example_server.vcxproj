@@ -113,7 +113,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>%(AdditionalDependencies);mysqlcppconn.lib</AdditionalDependencies>
+      <AdditionalDependencies>mysqlcppconn.lib;hiredis.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\Users\User\Desktop\Code\protobuf-main\build\Release;C:\Program Files\MySQL\mysql-connector-c++-9.4.0-winx64\lib64\debug\vs14;C:\Program Files\MySQL\mysql-connector-c++-9.4.0-winx64\lib64\debug;C:\Users\User\Downloads\mysql-connector-c++-9.4.0-winx64-debug\mysql-connector-c++-9.4.0-winx64\lib64;C:\Program Files\hiredis\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>

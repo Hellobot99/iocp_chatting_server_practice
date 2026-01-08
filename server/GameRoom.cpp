@@ -32,6 +32,7 @@ void GameRoom::AddPlayer(std::shared_ptr<PlayerState> player, std::shared_ptr<Cl
     std::lock_guard<std::mutex> lock(roomMutex_);
     players_[player->sessionId] = player;
     sessions_[player->sessionId] = session;
+
     std::cout << "Session " << player->sessionId << " joined Room " << id_ << std::endl;
 }
 

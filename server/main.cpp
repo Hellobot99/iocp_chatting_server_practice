@@ -13,7 +13,7 @@ int main()
 
     std::cout << "Server starting..." << std::endl;
 
-    if (!gameServer.GetPersistence().Initialize("tcp://127.0.0.1:3306", "root", "1234"))
+    if (!gameServer.GetPersistence().Initialize("tcp://127.0.0.1:3306", "root", "1234", "127.0.0.1", 6379))
     {
         std::cerr << "DB Initialization Failed!" << std::endl;
         return -1;

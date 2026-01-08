@@ -113,6 +113,19 @@ void EnterRoomCommand::Execute(RoomManager& roomManager, Persistence& persistenc
     {
         std::cout << "[Logic] User " << session->GetName() << " joined Room " << roomId_ << std::endl;
 
+        std::vector<std::string> history = persistence.GetRecentChats(roomId_);
+        std::cout << history.size() << std::endl;
+
+        for (const auto& chatLine : history) {
+            PacketChat packet;
+            packet.playerId = 0;
+            std::memset(packet.msg, 0, sizeof(packet.msg));
+
+            size_t copySize = (std::min)(chatLine.size(), sizeof(packet.msg) - 1);
+            std::memcpy(packet.msg, chatLine.c_str(), copySize);
+
+            session->Send(PacketId::CHAT, &packet, sizeof(packet));
+        }
         // (선택) 입장 로그를 DB에 남기고 싶다면 여기서 Persistence 요청 가능
     }
     else
@@ -158,26 +171,13 @@ void ChatCommand::Execute(RoomManager& roomManager, Persistence& persistence)
     if (session == nullptr) return;
 
     auto room = session->GetCurrentRoom();
+    if (room == nullptr) return;
+
     std::string senderName = session->GetName();
 
-    if (room)
-    {
-        // (1) 방 안의 사람들에게 브로드캐스트
-        room->BroadcastChat(senderName, message_);
+    room->BroadcastChat(senderName, message_);
 
-        // (2) DB에 채팅 로그 저장 (비동기)
-        auto req = std::make_unique<PersistenceRequest>();
-        req->type = RequestType::SAVE_CHAT;
-        req->sessionId = sessionId_;
-        req->username = senderName;
-        req->message = message_;
-
-        persistence.PostRequest(std::move(req));
-    }
-    else
-    {
-        std::cout << "[Logic Error] User " << senderName << " sent chat but is not in a room." << std::endl;
-    }
+    persistence.SaveAndCacheChat(room->GetId(), sessionId_, senderName, message_);
 }
 
 void CreateRoomCommand::Execute(RoomManager& roomManager, Persistence& persistence)

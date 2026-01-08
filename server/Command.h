@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <algorithm>
 #include "Utility.h"
 
 class Persistence;

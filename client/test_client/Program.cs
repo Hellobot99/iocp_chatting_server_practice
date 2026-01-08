@@ -13,7 +13,7 @@ namespace TestClient
 
             string serverIp = "127.0.0.1"; // 서버 IP
             int serverPort = 9190;         // 서버 포트
-            int clientCount = 500;         // 접속시킬 클라이언트 수
+            int clientCount = 1;         // 접속시킬 클라이언트 수
 
             List<Task> clients = new List<Task>();
 

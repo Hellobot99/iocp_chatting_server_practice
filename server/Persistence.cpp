@@ -18,17 +18,21 @@ Persistence::~Persistence()
     Stop();
 }
 
-bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass)
+bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser, const std::string& dbPass,
+    const std::string& redisHost, int redisPort)
 {
+    // 1. 전달받은 정보를 멤버 변수에 저장 (워커 스레드나 다른 함수에서 사용하기 위함)
     dbUrl_ = dbUrl;
     dbUser_ = dbUser;
     dbPass_ = dbPass;
+    redisHost_ = redisHost;
+    redisPort_ = redisPort;
 
     try {
-        // 일단 스레드 개수만큼 커넥션을 만들어둡니다.
+        // 2. MySQL 커넥션 풀 초기화
         for (int i = 0; i < threadCount_; ++i) {
             sql::Connection* con = driver_->connect(dbUrl_, dbUser_, dbPass_);
-            con->setSchema("chatdb"); // DB 이름 확인
+            con->setSchema("chatdb");
             connections_.push_back(con);
         }
     }
@@ -37,12 +41,20 @@ bool Persistence::Initialize(const std::string& dbUrl, const std::string& dbUser
         return false;
     }
 
+    // 3. Redis 공용 컨텍스트 초기화 (InternalCacheChat 등에서 사용)
+    redisCtx_ = redisConnect(redisHost_.c_str(), redisPort);
+    if (redisCtx_ == nullptr || redisCtx_->err) {
+        std::cerr << "[Persistence] Redis Connection Failed!" << std::endl;
+        // Redis가 필수 요소라면 여기서 false를 리턴하여 서버 실행을 중단할 수 있습니다.
+    }
+
+    // 4. 워커 스레드 생성 및 실행
     running_ = true;
     for (int i = 0; i < threadCount_; ++i) {
         workers_.emplace_back(&Persistence::WorkerLoop, this);
     }
 
-    std::cout << "[Persistence] Initialized with " << threadCount_ << " threads.\n";
+    std::cout << "[Persistence] Initialized with " << threadCount_ << " DB threads and Redis connection.\n";
     return true;
 }
 
@@ -54,6 +66,11 @@ void Persistence::Stop()
 
     for (auto& t : workers_) {
         if (t.joinable()) t.join();
+    }
+
+    if (redisCtx_) {
+        redisFree(redisCtx_);
+        redisCtx_ = nullptr;
     }
 
     // 풀에 남아있는 커넥션 삭제
@@ -149,6 +166,31 @@ int Persistence::AuthenticateUser(const std::string& username, const std::string
     return dbId;
 }
 
+void Persistence::SaveAndCacheChat(int roomId, uint32_t sessionId, const std::string& user, const std::string& msg) {
+    // 1. MySQL 저장은 비동기로 요청 (기존 WorkerLoop 활용)
+    auto req = std::make_unique<PersistenceRequest>();
+    req->type = RequestType::SAVE_CHAT;
+    req->sessionId = sessionId;
+    req->username = user;
+    req->message = msg;
+    PostRequest(std::move(req));
+
+    // 2. Redis 캐싱은 즉각 수행 (속도가 빠르므로 동기 처리 가능)
+    InternalCacheChat(roomId, user, msg);
+}
+
+void Persistence::InternalCacheChat(int roomId, const std::string& user, const std::string& msg) {
+    std::lock_guard<std::mutex> lock(redisMutex_);
+    if (!redisCtx_) return;
+
+    std::string key = "room:chat:" + std::to_string(roomId);
+    std::string data = user + ":" + msg;
+
+    // Redis List에 저장하고 50개로 제한
+    freeReplyObject(redisCommand(redisCtx_, "LPUSH %s %s", key.c_str(), data.c_str()));
+    freeReplyObject(redisCommand(redisCtx_, "LTRIM %s 0 49", key.c_str()));
+}
+
 
 // -------------------------------------------------------------
 // [Process Functions]
@@ -199,13 +241,6 @@ void Persistence::ProcessRegister(sql::Connection* con, const PersistenceRequest
         res.success = success;
         session->Send(PacketId::REGISTER_RES, &res, sizeof(res));
     }
-}
-
-// [구버전] 비동기 로그인 (이제 AuthenticateUser를 쓴다면 안 써도 됨)
-void Persistence::ProcessLogin(sql::Connection* con, const PersistenceRequest& req)
-{
-    // ... (기존 코드 유지) ...
-    // 만약 LoginCommand에서 AuthenticateUser만 쓴다면 이 함수는 호출되지 않습니다.
 }
 
 // -------------------------------------------------------------
@@ -270,4 +305,21 @@ void Persistence::WorkerLoop()
 
     // 워커 종료 시 커넥션 해제
     delete myCon;
+}
+
+std::vector<std::string> Persistence::GetRecentChats(int roomId) {
+    std::lock_guard<std::mutex> lock(redisMutex_);
+    std::vector<std::string> chats;
+    if (!redisCtx_) return chats;
+
+    std::string key = "room:chat:" + std::to_string(roomId);
+    redisReply* reply = (redisReply*)redisCommand(redisCtx_, "LRANGE %s 0 -1", key.c_str());
+
+    if (reply && reply->type == REDIS_REPLY_ARRAY) {
+        for (int i = (int)reply->elements - 1; i >= 0; --i) {
+            chats.push_back(reply->element[i]->str);
+        }
+    }
+    freeReplyObject(reply);
+    return chats;
 }

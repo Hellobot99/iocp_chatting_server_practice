@@ -13,7 +13,6 @@ Server::Server(int iocpThreadCount, int dbThreadCount)
     nextSessionId_(1)
 {
     persistence_ = std::make_unique<Persistence>(dbThreadCount);
-    persistence_->Initialize("tcp://127.0.0.1:3306", "root", "1234");
 
     gameLogic_ = std::make_unique<GameLogic>(Server::GetGLTInputQueue(), roomManager_, *persistence_);
     iocpThreadCount_ = iocpThreadCount;
