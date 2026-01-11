@@ -26,7 +26,8 @@ int main()
             std::string command;
             std::cin >> command;
 
-            if (command == "quit") {
+            if (command == "exit") {
+                gameServer.Stop();
                 break;
             }
 

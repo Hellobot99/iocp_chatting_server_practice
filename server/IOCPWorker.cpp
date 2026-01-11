@@ -1,6 +1,8 @@
 #include "IOCPWorker.h"
 #include "ClientSession.h"
 #include <iostream>
+#include "Server.h" 
+extern Server* g_Server;
 
 DWORD WINAPI IOCPWorkerThread(LPVOID arg)
 {
@@ -20,6 +22,12 @@ DWORD WINAPI IOCPWorkerThread(LPVOID arg)
             INFINITE
         );
 
+        if (ok && bytesTransferred == 0 && completionKey == 0 && pIoData == nullptr)
+        {
+            std::cout << "[Worker] Thread Exiting..." << std::endl;
+            break; // while 루프 탈출 -> 스레드 종료
+        }
+
         // CompletionKey는 우리가 등록한 ClientSession 포인터
         ClientSession* pSession = reinterpret_cast<ClientSession*>(completionKey);
 
@@ -28,14 +36,14 @@ DWORD WINAPI IOCPWorkerThread(LPVOID arg)
         // - bytesTransferred가 0이면 상대방이 소켓을 닫음 (Graceful Close)
         if (!ok || bytesTransferred == 0)
         {
-            // [수정됨] 주석을 지우고 Disconnect 호출
             if (pSession)
             {
-                // 세션 내부에서 closesocket() 하고 Server에게 나를 지워달라고 요청함
-                pSession->Disconnect();
-            }
+                pSession->Disconnect(); // 1. 소켓 닫기 및 정리
 
-            // 연결이 끊겼으므로 더 이상 처리하지 않고 다음 대기로 넘어감
+                // 2. [★여기서 삭제] IO 작업이 다 끝난 이 시점에 안전하게 삭제합니다.
+                if (g_Server)
+                    g_Server->RemoveSession(pSession->GetSessionId());
+            }
             continue;
         }
 

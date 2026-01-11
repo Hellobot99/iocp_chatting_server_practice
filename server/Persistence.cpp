@@ -69,6 +69,10 @@ void Persistence::Stop()
     }
 
     if (redisCtx_) {
+        redisReply* reply = (redisReply*)redisCommand(redisCtx_, "DEL active_users");
+        if (reply) freeReplyObject(reply);
+        std::cout << "[Persistence] Redis active_users cleared." << std::endl;
+
         redisFree(redisCtx_);
         redisCtx_ = nullptr;
     }
@@ -131,36 +135,41 @@ int Persistence::AuthenticateUser(const std::string& username, const std::string
 
     try
     {
-        // 1. 커넥션 빌려오기
+        // 1. [MySQL] 커넥션 빌려오기 & 쿼리 준비 (기존 코드 유지)
         conn = GetConnection();
         if (conn == nullptr) return -1;
 
-        // 2. 쿼리 준비
         std::unique_ptr<sql::PreparedStatement> pstmt(
             conn->prepareStatement("SELECT id FROM User WHERE username = ? AND password = ?")
         );
-
         pstmt->setString(1, username);
         pstmt->setString(2, password);
 
-        // 3. 실행
+        // 2. [MySQL] 실행 및 결과 확인
         std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
-
-        // 4. 결과 확인
         if (res->next())
         {
             dbId = res->getInt("id");
         }
 
-        // 5. 커넥션 반납
         ReturnConnection(conn);
     }
     catch (sql::SQLException& e)
     {
         std::cout << "[DB Error] AuthenticateUser: " << e.what() << std::endl;
-        // 에러난 커넥션은 재사용하지 않고 삭제하는 것이 안전 (여기서는 간단히 처리)
         if (conn) delete conn;
         return -1;
+    }
+
+    // 3. [Redis] MySQL 인증에 성공했다면, 중복 로그인 검사 (CheckAndRegisterSession 호출)
+    if (dbId != -1)
+    {
+        // Redis에 등록을 시도합니다. 이미 접속 중이라면 false가 반환되게 구현합니다.
+        if (CheckAndRegisterSession(username) == false)
+        {
+            std::cout << "[Login Fail] User already logged in: " << username << std::endl;
+            return -1;
+        }
     }
 
     return dbId;
@@ -322,4 +331,34 @@ std::vector<std::string> Persistence::GetRecentChats(int roomId) {
     }
     freeReplyObject(reply);
     return chats;
+}
+
+bool Persistence::CheckAndRegisterSession(const std::string& username)
+{
+    std::lock_guard<std::mutex> lock(redisMutex_);
+    if (!redisCtx_) return true;
+
+    // "active_users"라는 키의 Set에 유저네임을 추가 시도
+    redisReply* reply = (redisReply*)redisCommand(redisCtx_, "SADD active_users %s", username.c_str());
+
+    bool isNewLogin = false;
+    if (reply)
+    {
+        // integer가 1이면 신규 등록(성공), 0이면 이미 존재(중복)
+        if (reply->type == REDIS_REPLY_INTEGER && reply->integer == 1)
+        {
+            isNewLogin = true;
+        }
+        freeReplyObject(reply);
+    }
+
+    return isNewLogin;
+}
+
+void Persistence::RemoveActiveUser(const std::string& username) {
+    std::lock_guard<std::mutex> lock(redisMutex_);
+    if (!redisCtx_) return;
+
+    freeReplyObject(redisCommand(redisCtx_, "SREM active_users %s", username.c_str()));
+    std::cout << "[Redis] Removed active session: " << username << std::endl;
 }

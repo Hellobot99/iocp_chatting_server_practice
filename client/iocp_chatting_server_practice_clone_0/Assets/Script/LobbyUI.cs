@@ -1,6 +1,7 @@
-using UnityEngine;
-using UnityEngine.UI;
 using TMPro;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class LobbyUI : MonoBehaviour
 {
@@ -22,6 +23,7 @@ public class LobbyUI : MonoBehaviour
     public GameObject roomItemPrefab;
     public Button refreshButton;     // [수정] 새로고침 버튼
     public Button openCreatePanelButton;
+    public Button LogoutButton;
 
     [Header("Create Room UI")]
     public GameObject createRoomPanel; // 로비 패널 위에 뜨는 팝업
@@ -57,6 +59,9 @@ public class LobbyUI : MonoBehaviour
         // [누락된 부분 수정] 새로고침 버튼 연결
         if (refreshButton != null)
             refreshButton.onClick.AddListener(OnRefreshClicked);
+
+        if (LogoutButton != null)
+            LogoutButton.onClick.AddListener(OnLogoutClicked);
 
         openCreatePanelButton.onClick.AddListener(() => {
             createRoomPanel.SetActive(true);
@@ -121,6 +126,16 @@ public class LobbyUI : MonoBehaviour
     {
         // 방 목록 요청
         NetworkManager.Instance.SendPacket(PacketId.ROOM_LIST_REQ, new byte[0]);
+    }
+
+    void OnLogoutClicked()
+    {
+        // 방 목록 요청
+        NetworkManager.Instance.SendLogout();
+
+        loginPanel.SetActive(true);
+        lobbyPanel.SetActive(false);
+        gamePanel.SetActive(false);
     }
 
     // -----------------------------------------------------------

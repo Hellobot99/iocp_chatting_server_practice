@@ -66,6 +66,10 @@ bool Server::Start(USHORT port)
 // Stop: 모든 스레드 종료 및 자원 정리
 void Server::Stop()
 {
+    if (isStopped_) return;
+    isStopped_ = true;
+
+    std::cout << "Stopping server..." << std::endl;
     // 1. Accept 루프 정지
     accepting_ = false;
 
@@ -114,10 +118,13 @@ void Server::Stop()
         persistence_->Stop();
     }
 
-    // 5. 네트워킹 자원 정리 (closesocket, WSACleanup)
-    if (hIOCP_ != NULL) CloseHandle(hIOCP_);
+    if (hIOCP_ != NULL)
+    {
+        CloseHandle(hIOCP_);
+        hIOCP_ = NULL;
+    }
+
     WSACleanup();
-    //redisFree(c);
 }
 
 LockFreeQueue<std::unique_ptr<ICommand>>& Server::GetGLTInputQueue()

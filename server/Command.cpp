@@ -49,6 +49,8 @@ void LoginCommand::Execute(RoomManager& roomManager, Persistence& persistence)
         {
             std::cout << "[Login] Denied duplicate login: " << username_ << std::endl;
 
+            persistence.RemoveActiveUser(username_);
+
             PacketLoginRes res;
             res.success = false;
             res.playerId = -1; // 실패 의미
@@ -206,5 +208,24 @@ void RoomListCommand::Execute(RoomManager& roomManager, Persistence& persistence
     if (session)
     {
         roomManager.SendRoomList(session);
+    }
+}
+
+void LogoutCommand::Execute(RoomManager& roomManager, Persistence& persistence)
+{
+
+    std::cout << "[DEBUG] Try to remove user from Redis: [" << username_ << "]" << std::endl;
+    // 1. Redis에서 세션 제거 (필수)
+    persistence.RemoveActiveUser(username_);
+
+    // 2. 현재 방에서 나가기 처리 (이미 구현된 로직 활용)
+    roomManager.RemovePlayerFromCurrentRoom(sessionId_);
+
+    std::cout << "[Logout] User: " << username_ << " logged out." << std::endl;
+
+    auto session = g_Server->GetSession(sessionId_);
+    if (session)
+    {
+        session->Disconnect();
     }
 }

@@ -130,3 +130,15 @@ public:
 private:
     uint32_t sessionId_;
 };
+
+class LogoutCommand : public ICommand
+{
+public:
+    LogoutCommand(uint32_t sessionId, const std::string& username)
+        : sessionId_(sessionId), username_(username) {}
+    void Execute(RoomManager& roomManager, Persistence& persistence) override;
+
+private:
+    uint32_t sessionId_;
+    std::string username_;
+};

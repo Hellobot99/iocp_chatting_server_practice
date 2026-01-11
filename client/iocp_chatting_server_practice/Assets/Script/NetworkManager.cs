@@ -160,7 +160,14 @@ public class NetworkManager : MonoBehaviour
 
     void OnApplicationQuit()
     {
-        CloseConnection();
+        if (isConnected)
+        {
+            SendLogout();
+
+            Thread.Sleep(100);
+
+            CloseConnection();
+        }
     }
 
     // 유틸리티 함수들
@@ -261,6 +268,13 @@ public class NetworkManager : MonoBehaviour
         SendPacket(PacketId.CREATE_ROOM_REQ, packet);
     }
 
+    public void SendLogout()
+    {
+        if (!isConnected) return;
 
+        // 바디 없이 헤더만 보내면 되므로 빈 바이트 배열 전송
+        SendPacket(PacketId.LOGOUT_REQ, new byte[0]);
+        Debug.Log("[Network] 로그아웃 요청 전송함");
+    }
 
 }

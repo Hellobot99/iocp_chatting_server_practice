@@ -22,19 +22,16 @@ void ClientSession::Disconnect()
 {
     if (socket_ == INVALID_SOCKET) return;
 
-    if (g_Server)
-    {
-        g_Server->GetRoomManager().RemovePlayerFromCurrentRoom(sessionId_);
+    std::string name = GetName();
+    if (!name.empty()) {
+        auto cmd = std::make_unique<LogoutCommand>(sessionId_, name);
+        if (g_Server) Server::GetGLTInputQueue().Push(std::move(cmd));
     }
 
-    // 2. 소켓 닫기 (기존 코드)
     closesocket(socket_);
     socket_ = INVALID_SOCKET;
-    std::cout << "[Session] Disconnected Client: " << sessionId_ << std::endl;
 
-    // 3. 서버 세션 목록에서 제거 (기존 코드)
-    if (g_Server)
-        g_Server->RemoveSession(sessionId_);
+    std::cout << "[Session] Disconnected Client: " << sessionId_ << std::endl;
 }
 
 void ClientSession::Send(PacketId id, const std::string& serializedData)
@@ -283,6 +280,14 @@ std::unique_ptr<ICommand> ClientSession::DeserializeCommand()
         break;
     }
 
+    case PacketId::LOGOUT_REQ:
+    {
+        std::cout << "[RECV] LOGOUT_REQ" << std::endl;
+        // 현재 세션의 유저네임을 가져와서 커맨드 생성
+        std::string myName = name_; // ClientSession에 저장된 이름
+        command = std::make_unique<LogoutCommand>(sessionId_, myName);
+        break;
+    }
 
     default:
         std::cout << "[RECV] Unknown Packet ID: " << header->packetId << std::endl;

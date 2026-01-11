@@ -23,6 +23,8 @@ enum class PacketId : uint16_t
 
     CREATE_ROOM_REQ = 12,
     CREATE_ROOM_RES = 13,
+
+    LOGOUT_REQ = 14,
 };
 
 #pragma pack(push, 1) 

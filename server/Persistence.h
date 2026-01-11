@@ -29,6 +29,8 @@ public:
     std::vector<std::string> GetRecentChats(int roomId);
     void SaveAndCacheChat(int roomId, uint32_t sessionId, const std::string& user, const std::string& msg);
 
+    void RemoveActiveUser(const std::string& username);
+
 private:
     void WorkerLoop();
     void ProcessSaveChat(sql::Connection* con, const PersistenceRequest& req);
@@ -36,7 +38,6 @@ private:
 
     // [Redis 추가] 세션 관리 (중복 로그인 방지용)
     bool CheckAndRegisterSession(const std::string& username);
-    void RemoveActiveUser(const std::string& username);
 
     // [신규] 커넥션 헬퍼 함수
     sql::Connection* GetConnection();
