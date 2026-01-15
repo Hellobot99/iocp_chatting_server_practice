@@ -13,7 +13,6 @@ Server::Server(int iocpThreadCount, int dbThreadCount)
     nextSessionId_(1)
 {
     persistence_ = std::make_unique<Persistence>(dbThreadCount);
-
     gameLogic_ = std::make_unique<GameLogic>(Server::GetGLTInputQueue(), roomManager_, *persistence_);
     iocpThreadCount_ = iocpThreadCount;
 }
@@ -54,7 +53,6 @@ bool Server::Start(USHORT port)
     }
 
     // 3. Game Logic Thread (GLT) 실행
-    // GameLogic::Run()이 GLT의 진입 함수입니다.
     gameLogicThread_ = std::thread(&GameLogic::Run, gameLogic_.get());
 
     // 4. 클라이언트 수락 루프 시작
@@ -94,12 +92,10 @@ void Server::Stop()
     }
 
     // 3. IOCP Worker Thread 정지 신호 전달 (PostQueuedCompletionStatus 등을 이용) 및 조인
-    
     if (hIOCP_ != NULL)
     {
         for (size_t i = 0; i < iocpWorkerThreads_.size(); ++i)
         {
-            // pIoData=0, CompletionKey=0 (종료 신호로 약속된 값)을 넣습니다.
             PostQueuedCompletionStatus(hIOCP_, 0, 0, NULL);
         }
     }
@@ -138,7 +134,6 @@ void Server::AcceptLoop()
     while (accepting_.load()) {
         SOCKET clientSock = accept(listenSock_, NULL, NULL);
 
-        // [중요] accept가 실패했거나 서버가 종료되는 중이라면 무시해야 함
         if (clientSock == INVALID_SOCKET)
         {
             // 서버 종료 과정에서 발생한 에러라면 루프 종료
@@ -158,13 +153,14 @@ void Server::AcceptLoop()
 // 새 클라이언트 처리 로직 구현
 void Server::HandleNewClient(SOCKET clientSock)
 {
-    // IOCP에 클라이언트 소켓 등록
+    // ClientSession에 클라이언트 소켓 등록
     uint32_t newId = nextSessionId_.fetch_add(1);
     auto newSession = std::make_shared<ClientSession>(clientSock, newId);
 
     std::lock_guard<std::mutex> lock(sessionMutex_);
     sessions_.emplace(newId, newSession);
 
+    // IOCP에 클라이언트 소켓 등록
     CreateIoCompletionPort(
         (HANDLE)clientSock,
         hIOCP_,
@@ -192,15 +188,14 @@ std::shared_ptr<ClientSession> Server::GetSession(uint32_t id)
     return it->second;
 }
 
+// 해당 유저가 접속중인지 확인하는 함수
 bool Server::IsUserConnected(const std::string& username)
 {
-    // 세션 맵을 순회해야 하므로 락 필수
     std::lock_guard<std::mutex> lock(sessionMutex_);
 
     for (auto& pair : sessions_)
     {
         auto session = pair.second;
-        // 세션이 살아있고, 이름이 같다면 이미 접속 중인 것임
         if (session && session->GetName() == username)
         {
             return true;

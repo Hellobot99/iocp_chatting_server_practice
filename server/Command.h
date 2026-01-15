@@ -15,11 +15,9 @@ class ICommand
 {
 public:
     virtual ~ICommand() = default;
-    // 게임 로직과 DB 처리를 모두 접근할 수 있도록 인자를 받음
     virtual void Execute(RoomManager& roomManager, Persistence& persistence) = 0;
 };
 
-// [수정] 회원가입 커맨드 (신규 추가)
 class RegisterCommand : public ICommand {
 public:
     RegisterCommand(uint32_t sessionId, std::string username, std::string password)
@@ -35,7 +33,6 @@ private:
     std::string password_;
 };
 
-// [수정] 로그인 커맨드 (roomId 제거, password 추가)
 class LoginCommand : public ICommand {
 public:
     LoginCommand(uint32_t sessionId, std::string username, std::string password)
@@ -51,7 +48,6 @@ private:
     std::string password_;
 };
 
-// [수정] 방 입장 커맨드 (신규 추가: 로그인 후 호출됨)
 class EnterRoomCommand : public ICommand {
 public:
     EnterRoomCommand(uint32_t sessionId, int32_t roomId)
@@ -66,7 +62,6 @@ private:
     int32_t roomId_;
 };
 
-// [수정] 방 퇴장 커맨드 (신규 추가)
 class LeaveRoomCommand : public ICommand {
 public:
     LeaveRoomCommand(uint32_t sessionId)

@@ -23,7 +23,6 @@ public:
     void Stop();
     void PostRequest(std::unique_ptr<PersistenceRequest> request);
 
-    // [신규] 동기식 인증 함수
     int AuthenticateUser(const std::string& username, const std::string& password);
 
     std::vector<std::string> GetRecentChats(int roomId);
@@ -36,10 +35,8 @@ private:
     void ProcessSaveChat(sql::Connection* con, const PersistenceRequest& req);
     void ProcessRegister(sql::Connection* con, const PersistenceRequest& req);
 
-    // [Redis 추가] 세션 관리 (중복 로그인 방지용)
     bool CheckAndRegisterSession(const std::string& username);
 
-    // [신규] 커넥션 헬퍼 함수
     sql::Connection* GetConnection();
     void ReturnConnection(sql::Connection* con);
 

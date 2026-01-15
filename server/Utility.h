@@ -6,7 +6,6 @@
 #include <atomic>
 #include <cstdint>
 
-// IOCP 오버랩 I/O 데이터를 위한 구조체 (기존 코드 기반 유지)
 struct PER_IO_DATA {
     OVERLAPPED overlapped;
     WSABUF wsaBuf;

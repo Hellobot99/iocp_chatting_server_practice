@@ -22,7 +22,6 @@ private:
 
     static constexpr float FIXED_DT = 1.0f / 60.0f;
 
-    // [º¯°æ] LockFreeQueue -> ThreadSafeQueue
     LockFreeQueue<std::unique_ptr<ICommand>>& inputQueue_;
 
     RoomManager& roomManager_;

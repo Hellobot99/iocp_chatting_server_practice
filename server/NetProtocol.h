@@ -35,8 +35,6 @@ struct GameHeader
     uint16_t packetId;
 };
 
-// [1] 계정 관련 패킷 (DB 연동)
-
 struct PacketRegisterReq
 {
     char username[50];
@@ -70,13 +68,11 @@ struct PacketLeaveRoom
     uint32_t playerId;
 };
 
-// [3] 인게임 플레이 패킷
-
 struct PacketMove
 {
     float vx;
     float vy;
-    // float x, y; // 필요하다면 현재 위치 동기화용으로 추가 가능
+    // float x, y;
 };
 
 struct PacketChat
@@ -92,23 +88,20 @@ struct RoomInfo
     char title[32];
 };
 
-// 방 목록 응답 (헤더)
 struct PacketRoomListRes
 {
     int32_t count;
-    // 이 뒤에 RoomInfo[count] 가 따라붙음
 };
 
 struct PacketCreateRoomReq
 {
-    char title[32]; // 방 제목
+    char title[32];
 };
 
-// 방 만들기 응답 (Server -> Client)
 struct PacketCreateRoomRes
 {
     bool success;
-    int32_t roomId; // 생성된 방 번호 (성공 시)
+    int32_t roomId;
 };
 
 #pragma pack(pop)

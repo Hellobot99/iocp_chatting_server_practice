@@ -45,7 +45,7 @@ private:
     int iocpThreadCount_;
     bool isStopped_ = false;
 
-    // 1. I/O 워커 스레드 풀 (IOCP Worker Threads)
+    // 1. I/O 워커 스레드 풀
     std::vector<std::thread> iocpWorkerThreads_;
 
     // 2. 게임 로직 스레드 (GLT)
