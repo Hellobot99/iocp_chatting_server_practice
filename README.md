@@ -54,6 +54,9 @@ Windows IOCP(Input/Output Completion Port)를 활용한 비동기 소켓 채팅 
 * `GameLogic.cpp/h`, `RoomManager.cpp/h`: 채팅 및 방 관리 로직
 
 
+<img width="736" height="401" alt="다이어그램" src="https://github.com/user-attachments/assets/7f9e368a-8ac4-4ee9-b5c2-3581ba30603f" />
+
+
 * **client/**: Unity 클라이언트 프로젝트
 * `Assets/Script/`: 네트워크 매니저, 패킷 핸들러, UI 스크립트
 * `test_client/`: 스트레스 테스트 및 디버깅용 더미 클라이언트 (Console)
